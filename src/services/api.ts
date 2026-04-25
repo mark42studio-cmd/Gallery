@@ -142,8 +142,11 @@ export const api = {
   checkIn: (artworkId: string, qty: number, userId: string, userName: string, notes?: string) =>
     gasPost<Transaction>({ action: 'checkIn', artworkId, qty, userId, userName, notes: notes ?? '' }),
 
-  checkOut: (artworkId: string, qty: number, userId: string, userName: string, notes?: string) =>
-    gasPost<Transaction>({ action: 'checkOut', artworkId, qty, userId, userName, notes: notes ?? '' }),
+  checkOut: (
+    artworkId: string, qty: number, userId: string, userName: string,
+    notes?: string, outSubtype?: string, destination?: string, buyerName?: string, soldPrice?: number,
+  ) =>
+    gasPost<Transaction>({ action: 'checkOut', artworkId, qty, userId, userName, notes: notes ?? '', outSubtype, destination, buyerName, soldPrice }),
 
   updatePrice: (artworkId: string, newPrice: number, reason: string, userId: string, userName: string) =>
     gasPost<PriceHistory>({ action: 'updatePrice', artworkId, newPrice, reason, userId, userName }),

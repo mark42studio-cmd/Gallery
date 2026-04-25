@@ -130,19 +130,17 @@ export default function TransactionDrawer({
   async function handleSubmit() {
     if (!artworkId || !user) return;
 
-    if (isPrintmaking) {
-      if (selectedNums.length === 0) {
-        setFeedback({ ok: false, msg: '請選擇至少一件版號。' });
-        return;
-      }
-      if (txType === 'check-out' && outSubtype === 'transfer' && !destination.trim()) {
-        setFeedback({ ok: false, msg: '請填寫移轉目的地。' });
-        return;
-      }
-      if (txType === 'check-out' && outSubtype === 'sold' && !buyerName.trim()) {
-        setFeedback({ ok: false, msg: '請填寫買家名稱。' });
-        return;
-      }
+    if (isPrintmaking && selectedNums.length === 0) {
+      setFeedback({ ok: false, msg: '請選擇至少一件版號。' });
+      return;
+    }
+    if (txType === 'check-out' && outSubtype === 'transfer' && !destination.trim()) {
+      setFeedback({ ok: false, msg: '請填寫移轉目的地。' });
+      return;
+    }
+    if (txType === 'check-out' && outSubtype === 'sold' && !buyerName.trim()) {
+      setFeedback({ ok: false, msg: '請填寫買家名稱。' });
+      return;
     }
 
     setIsSubmitting(true);
@@ -169,8 +167,17 @@ export default function TransactionDrawer({
           notes,
         });
       } else {
-        const fn = txType === 'check-in' ? api.checkIn : api.checkOut;
-        res = await fn(artworkId, qty, user.userId, user.displayName, notes);
+        if (txType === 'check-in') {
+          res = await api.checkIn(artworkId, qty, user.userId, user.displayName, notes);
+        } else {
+          res = await api.checkOut(
+            artworkId, qty, user.userId, user.displayName, notes,
+            outSubtype,
+            outSubtype === 'transfer' ? destination : undefined,
+            outSubtype === 'sold' ? buyerName : undefined,
+            outSubtype === 'sold' && soldPrice ? Number(soldPrice) : undefined,
+          );
+        }
       }
 
       if (res.success) {
@@ -385,55 +392,10 @@ export default function TransactionDrawer({
                   )}
                 </div>
 
-                {/* CHECK-OUT transfer: destination gallery */}
-                {txType === 'check-out' && outSubtype === 'transfer' && (
-                  <div className="space-y-1.5">
-                    <label className={lbl}>移轉目的地</label>
-                    <input
-                      value={destination}
-                      onChange={(e) => setDestination(e.target.value)}
-                      placeholder="例：首都畫廊"
-                      className={inp}
-                    />
-                  </div>
-                )}
-
-                {/* CHECK-OUT sold: buyer + price */}
-                {txType === 'check-out' && outSubtype === 'sold' && (
-                  <div className="space-y-3">
-                    <div className="space-y-1.5">
-                      <label className={lbl}>買家名稱</label>
-                      <input
-                        value={buyerName}
-                        onChange={(e) => setBuyerName(e.target.value)}
-                        placeholder="例：王小明"
-                        className={inp}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className={lbl}>
-                        成交價格（NT$）
-                        <span className="normal-case tracking-normal font-normal text-ash ml-1">選填</span>
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={soldPrice}
-                        onChange={(e) => setSoldPrice(e.target.value)}
-                        placeholder={
-                          selected?.price
-                            ? `定價 NT$${Number(selected.price).toLocaleString()}`
-                            : '例：80000'
-                        }
-                        className={inp}
-                      />
-                    </div>
-                  </div>
-                )}
               </>
             )}
 
-            {/* ── LEGACY QTY MODE ─────────────────────────────── */}
+            {/* ── LEGACY QTY MODE (non-print) ──────────────────── */}
             {!isPrintmaking && (
               <div className="space-y-1.5">
                 <label className={lbl}>數量</label>
@@ -453,6 +415,51 @@ export default function TransactionDrawer({
                   >
                     <span className="text-lg leading-none select-none">+</span>
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── UNIVERSAL CHECK-OUT FIELDS (print + non-print) ── */}
+            {txType === 'check-out' && outSubtype === 'transfer' && (
+              <div className="space-y-1.5">
+                <label className={lbl}>移轉目的地</label>
+                <input
+                  value={destination}
+                  onChange={(e) => setDestination(e.target.value)}
+                  placeholder="例：首都畫廊"
+                  className={inp}
+                />
+              </div>
+            )}
+
+            {txType === 'check-out' && outSubtype === 'sold' && (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className={lbl}>買家名稱</label>
+                  <input
+                    value={buyerName}
+                    onChange={(e) => setBuyerName(e.target.value)}
+                    placeholder="例：王小明"
+                    className={inp}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={lbl}>
+                    成交價格（NT$）
+                    <span className="normal-case tracking-normal font-normal text-ash ml-1">選填</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={soldPrice}
+                    onChange={(e) => setSoldPrice(e.target.value)}
+                    placeholder={
+                      selected?.price
+                        ? `定價 NT$${Number(selected.price).toLocaleString()}`
+                        : '例：80000'
+                    }
+                    className={inp}
+                  />
                 </div>
               </div>
             )}

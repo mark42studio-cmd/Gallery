@@ -28,8 +28,10 @@ const GEMINI_EMBED_URL    = 'https://generativelanguage.googleapis.com/v1beta/mo
 function doGet(e) {
   const action = e.parameter.action;
   try {
-    if (action === 'getArtworks')     return jsonResponse(getArtworks());
-    if (action === 'getPriceHistory') return jsonResponse(getPriceHistory(e.parameter));
+    if (action === 'getArtworks')             return jsonResponse(getArtworks());
+    if (action === 'getPriceHistory')         return jsonResponse(getPriceHistory(e.parameter));
+    if (action === 'getEditions')             return jsonResponse(getEditions(e.parameter));
+    if (action === 'getQuickSourceLocations') return jsonResponse(getQuickSourceLocations(e.parameter));
     return jsonResponse({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonResponse({ success: false, error: err.message });
@@ -52,7 +54,9 @@ function doPost(e) {
     if (action === 'updateArtwork')    return jsonResponse(updateArtwork(body));
     if (action === 'updatePrice')      return jsonResponse(updateArtworkPrice(body));
     if (action === 'bulkUpdatePrices') return jsonResponse(bulkUpdatePrices(body));
-    if (action === 'aiCommand')        return jsonResponse(processAiCommand(body));
+    if (action === 'aiCommand')          return jsonResponse(processAiCommand(body));
+    if (action === 'editionTransaction') return jsonResponse(editionTransaction(body));
+    if (action === 'createNewArtwork')   return jsonResponse(createNewArtwork(body));
     return jsonResponse({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonResponse({
@@ -251,16 +255,32 @@ function bulkUpdatePrices(body) {
 // ── Transactions ──────────────────────────────────────────────────────────────
 
 function processTransaction(body, type) {
-  const { artworkId, qty, userId, userName, notes } = body;
+  const { artworkId, qty, userId, userName, notes, outSubtype, destination, buyerName, soldPrice } = body;
   if (!artworkId || !qty) throw new Error('artworkId and qty are required');
 
   const delta   = type === 'check-in' ? Number(qty) : -Number(qty);
   const updated = updateArtworkStock(artworkId, delta);
 
+  // Non-print check-out: persist buyer/destination on the Artworks row
+  if (type === 'check-out') {
+    if (outSubtype === 'sold' && buyerName) {
+      _updateArtworkLocation(artworkId, '已售：' + buyerName);
+    } else if (outSubtype === 'transfer' && destination) {
+      _updateArtworkLocation(artworkId, destination);
+    }
+  }
+
+  let fullNotes = notes || '';
+  if (type === 'check-out' && buyerName) {
+    fullNotes = '售予：' + buyerName + (soldPrice ? '，成交價：NT$' + soldPrice : '') + (fullNotes ? '，' + fullNotes : '');
+  } else if (type === 'check-out' && destination) {
+    fullNotes = '移轉至：' + destination + (fullNotes ? '，' + fullNotes : '');
+  }
+
   const txId = 'tx-' + Date.now();
   const row  = [
     txId, artworkId, updated.title, type, qty,
-    new Date().toISOString(), userId || '', userName || '', notes || '',
+    new Date().toISOString(), userId || '', userName || '', fullNotes,
   ];
   getSheet(SHEET_TRANSACTIONS).appendRow(row);
 
@@ -269,6 +289,170 @@ function processTransaction(body, type) {
     message: `${type === 'check-in' ? 'Checked in' : 'Checked out'} ${qty}× "${updated.title}". New qty: ${updated.qty}.`,
     data: { id: txId, artworkId, artworkTitle: updated.title, type, qty, date: row[5] },
   };
+}
+
+function _updateArtworkLocation(artworkId, location) {
+  const sheet   = getSheet(SHEET_ARTWORKS);
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idIdx  = headers.indexOf('id');
+  const locIdx = headers.indexOf('location');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idIdx]) !== String(artworkId)) continue;
+    if (locIdx !== -1) sheet.getRange(i + 1, locIdx + 1).setValue(location);
+    break;
+  }
+}
+
+// ── Editions ──────────────────────────────────────────────────────────────────
+// Editions sheet columns: artworkId | edition_number | location_category | location_detail | is_sold | sold_price | is_framed | notes
+
+function getEditions(params) {
+  const artworkId = params.artworkId;
+  if (!artworkId) return { success: false, error: 'artworkId is required' };
+
+  const sheet   = getSheet('Editions');
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const artIdIdx = headers.indexOf('artworkId');
+
+  const editions = [];
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    if (String(data[i][artIdIdx]) !== String(artworkId)) continue;
+    editions.push(rowToObject(headers, data[i]));
+  }
+  return { success: true, data: editions };
+}
+
+function getQuickSourceLocations(params) {
+  const artworkId = params.artworkId;
+  if (!artworkId) return { success: false, error: 'artworkId is required' };
+
+  const sheet   = getSheet('Editions');
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const artIdIdx  = headers.indexOf('artworkId');
+  const isSoldIdx = headers.indexOf('is_sold');
+  const locCatIdx = headers.indexOf('location_category');
+  const locDetIdx = headers.indexOf('location_detail');
+
+  const locations = {};
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    if (String(data[i][artIdIdx]) !== String(artworkId)) continue;
+    if (data[i][isSoldIdx]) continue;
+    if (data[i][locCatIdx] === '家裡') continue;
+    const detail = String(data[i][locDetIdx] || '').trim();
+    if (detail) locations[detail] = true;
+  }
+  return { success: true, data: Object.keys(locations) };
+}
+
+function editionTransaction(body) {
+  const { artworkId, editionNumbers, txType, outSubtype, source, destination, soldPrice, userId, userName, notes } = body;
+  if (!artworkId || !editionNumbers || !editionNumbers.length) {
+    throw new Error('artworkId and editionNumbers are required');
+  }
+
+  const edSheet  = getSheet('Editions');
+  const data     = edSheet.getDataRange().getValues();
+  const headers  = data[0];
+  const artIdIdx    = headers.indexOf('artworkId');
+  const edNumIdx    = headers.indexOf('edition_number');
+  const locCatIdx   = headers.indexOf('location_category');
+  const locDetIdx   = headers.indexOf('location_detail');
+  const isSoldIdx   = headers.indexOf('is_sold');
+  const soldPriceIdx = headers.indexOf('sold_price');
+  const edNotesIdx  = headers.indexOf('notes');
+
+  const nums = editionNumbers.map(String);
+  let updated = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][artIdIdx]) !== String(artworkId)) continue;
+    if (!nums.includes(String(data[i][edNumIdx]))) continue;
+
+    const row = i + 1;
+    if (txType === 'check-in') {
+      edSheet.getRange(row, locCatIdx + 1).setValue('家裡');
+      edSheet.getRange(row, locDetIdx + 1).setValue('');
+      if (edNotesIdx !== -1 && source) {
+        edSheet.getRange(row, edNotesIdx + 1).setValue('從 ' + source + ' 入庫');
+      }
+    } else {
+      if (outSubtype === 'sold') {
+        edSheet.getRange(row, isSoldIdx + 1).setValue(true);
+        edSheet.getRange(row, locCatIdx + 1).setValue('已售出');
+        edSheet.getRange(row, locDetIdx + 1).setValue(destination || '');
+        if (soldPriceIdx !== -1 && soldPrice) {
+          edSheet.getRange(row, soldPriceIdx + 1).setValue(Number(soldPrice));
+        }
+      } else {
+        edSheet.getRange(row, locCatIdx + 1).setValue('畫廊');
+        edSheet.getRange(row, locDetIdx + 1).setValue(destination || '');
+      }
+    }
+    updated++;
+  }
+
+  _syncArtworkQty(artworkId);
+
+  const txNotes = notes || (
+    txType === 'check-in'
+      ? '入庫自：' + (source || '未指定')
+      : outSubtype === 'sold'
+        ? '售予：' + (destination || '未知')
+        : '移轉至：' + (destination || '未知')
+  );
+  getSheet(SHEET_TRANSACTIONS).appendRow([
+    'tx-' + Date.now(), artworkId, _getArtworkTitle(artworkId),
+    txType === 'check-in' ? 'check-in' : 'check-out',
+    updated, new Date().toISOString(), userId || '', userName || '', txNotes,
+  ]);
+
+  SpreadsheetApp.flush();
+  return { success: true, data: { updated } };
+}
+
+function _syncArtworkQty(artworkId) {
+  const edSheet   = getSheet('Editions');
+  const edData    = edSheet.getDataRange().getValues();
+  const edHeaders = edData[0];
+  const artIdIdx  = edHeaders.indexOf('artworkId');
+  const isSoldIdx = edHeaders.indexOf('is_sold');
+
+  let inStock = 0;
+  for (let i = 1; i < edData.length; i++) {
+    if (String(edData[i][artIdIdx]) !== String(artworkId)) continue;
+    if (!edData[i][isSoldIdx]) inStock++;
+  }
+
+  const artSheet   = getSheet(SHEET_ARTWORKS);
+  const artData    = artSheet.getDataRange().getValues();
+  const artHeaders = artData[0];
+  const artIdColIdx = artHeaders.indexOf('id');
+  const qtyIdx      = artHeaders.indexOf('qty');
+  const stIdx       = artHeaders.indexOf('status');
+
+  for (let i = 1; i < artData.length; i++) {
+    if (String(artData[i][artIdColIdx]) !== String(artworkId)) continue;
+    artSheet.getRange(i + 1, qtyIdx + 1).setValue(inStock);
+    artSheet.getRange(i + 1, stIdx  + 1).setValue(inStock > 0 ? 'in-stock' : 'out');
+    break;
+  }
+}
+
+function _getArtworkTitle(artworkId) {
+  const sheet    = getSheet(SHEET_ARTWORKS);
+  const data     = sheet.getDataRange().getValues();
+  const headers  = data[0];
+  const idIdx    = headers.indexOf('id');
+  const titleIdx = headers.indexOf('title');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idIdx]) === String(artworkId)) return String(data[i][titleIdx] || '');
+  }
+  return '';
 }
 
 // ── Vector Embeddings ─────────────────────────────────────────────────────────
@@ -624,39 +808,64 @@ function rowToObject(headers, row) {
   }, {});
 }
 
-  function createNewArtwork(payload) {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const artworkSheet = ss.getSheetByName('Artworks');
-    const editionSheet = ss.getSheetByName('Editions');
+function createNewArtwork(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const artSheet = ss.getSheetByName('Artworks');
+  const edSheet  = ss.getSheetByName('Editions');
 
-    const newId = "art-" + new Date().getTime();
-    artworkSheet.appendRow([
+  try {
+    const newId   = _generateArtworkId();
+    const isPrint = String(payload.category || '').includes('版畫');
+    const edTotal = parseInt(payload.edition_total) || 0;
+    const apTotal = parseInt(payload.ap_count) || 0;
+    const initialQty = isPrint ? (edTotal + apTotal) : (parseInt(payload.qty) || 1);
+    const price   = parseInt(payload.price) || 0;
+
+    artSheet.appendRow([
       newId,
       payload.title,
       payload.artist,
-      payload.paper_size || '',
-      payload.image_size || '',
-      payload.price_unframed || payload.price || 0,
-      payload.price_frame || 0,
-      payload.total_editions || payload.edition_total || 0,
-      payload.ap_count || 0,
-      payload.creation_year || '',
+      payload.category,
+      'in-stock',
+      initialQty,                // F: qty
+      isPrint ? edTotal : '',    // G: edition_total
+      isPrint ? apTotal : '',    // H: ap_count
+      price,                     // I: price
+      payload.location || '自家',
     ]);
 
-    const totalEditions = Number(payload.total_editions || payload.edition_total || 0);
-    if (totalEditions > 0 && editionSheet) {
-      const rows = [];
-      for (let i = 1; i <= totalEditions; i++) {
-        rows.push([
-          newId, i, '家裡', '', false,
-          payload.price_unframed || payload.price || 0,
-          false, ''
-        ]);
+    if (isPrint && initialQty > 0) {
+      const editionsData = [];
+      for (let i = 1; i <= edTotal; i++) {
+        editionsData.push([newId, i, '家裡', '', false, price, false, '']);
       }
-      const lastRow = editionSheet.getLastRow();
-      editionSheet.getRange(lastRow + 1, 1, rows.length, 8).setValues(rows);
+      for (let i = 1; i <= apTotal; i++) {
+        editionsData.push([newId, 'AP' + i, '家裡', '', false, price, false, '']);
+      }
+      if (editionsData.length > 0) {
+        edSheet.getRange(edSheet.getLastRow() + 1, 1, editionsData.length, 8).setValues(editionsData);
+      }
     }
 
-    return { success: true, message: "作品及 " + totalEditions + " 件版數已建立，定價 " + (payload.price_unframed ||
-  payload.price) };
+    SpreadsheetApp.flush();
+    return { success: true, data: { id: newId } };
+  } catch (e) {
+    return { success: false, error: e.toString() };
   }
+}
+
+function _generateArtworkId() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Artworks');
+  const ids = sheet.getRange('A2:A').getValues().flat().filter(String);
+  if (ids.length === 0) return 'art-001';
+
+  let maxNum = 0;
+  ids.forEach(id => {
+    const match = String(id).match(/art-(\d+)/);
+    if (match) {
+      const num = parseInt(match[1]);
+      if (num > maxNum) maxNum = num;
+    }
+  });
+  return 'art-' + String(maxNum + 1).padStart(3, '0');
+}
