@@ -91,21 +91,26 @@ async function aiCommandFetch(body: Record<string, unknown>): Promise<GASRespons
   const rawText = await res.text();
   console.log('[AI Command] RAW GAS RESPONSE:', rawText);
 
-  let data: Record<string, unknown>;
+  let parsed: Record<string, unknown>;
   try {
-    data = JSON.parse(rawText);
+    parsed = JSON.parse(rawText);
   } catch {
     throw new Error(`GAS returned non-JSON. Raw preview: ${rawText.substring(0, 150)}`);
   }
 
-  if (data.error) {
-    return { success: false, error: String(data.error) };
+  if (parsed.error) {
+    return { success: false, error: String(parsed.error) };
   }
 
-  const aiMessage = (data.reply ?? data.message ?? data.text ?? data.response) as string | undefined;
+  const nested = parsed.data as Record<string, unknown> | undefined;
+  const aiMessage = (nested?.message || parsed.message || parsed.reply) as string | undefined;
+
+  if (!aiMessage && parsed.success !== false) {
+    throw new Error(`JSON parsed but no message key found. Available keys: ${Object.keys(parsed).join(', ')}`);
+  }
 
   if (!aiMessage) {
-    throw new Error(`JSON parsed but no message key found. Available keys: ${Object.keys(data).join(', ')}`);
+    return { success: false, error: 'GAS returned success:false with no message.' };
   }
 
   return { success: true, data: { message: aiMessage } };

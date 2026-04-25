@@ -20,7 +20,7 @@
 const SHEET_ARTWORKS      = 'Artworks';
 const SHEET_TRANSACTIONS  = 'Transactions';
 const SHEET_PRICE_HISTORY = 'PriceHistory';
-const GEMINI_FLASH_URL    = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=';
+const GEMINI_FLASH_URL    = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=';
 const GEMINI_EMBED_URL    = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=';
 
 // ── Routing ──────────────────────────────────────────────────────────────────
@@ -55,7 +55,11 @@ function doPost(e) {
     if (action === 'aiCommand')        return jsonResponse(processAiCommand(body));
     return jsonResponse({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
-    return jsonResponse({ success: false, error: err.message });
+    return jsonResponse({
+      success: false,
+      error: err.message,
+      data: { message: 'GAS_ERROR: ' + err.message, stack: err.stack }
+    });
   }
 }
 
@@ -547,7 +551,15 @@ function handleSearchIntent(command, apiKey) {
   const reply = geminiFlash(responsePrompt, apiKey);
   console.log('[handleSearchIntent] FINAL GEMINI REPLY: ' + reply);
   Logger.log('[handleSearchIntent] FINAL GEMINI REPLY: ' + reply);
-  return { success: true, data: { message: reply || '抱歉，無法取得回應。' } };
+  if (!reply) {
+    const debugMsg = 'DEBUG_EMPTY_REPLY: Gemini returned no text. ' +
+      topMatches.length + ' match(es) found: ' +
+      topMatches.map(function(a) { return a.title; }).join(', ');
+    console.log('[handleSearchIntent] ' + debugMsg);
+    Logger.log('[handleSearchIntent] ' + debugMsg);
+    return { success: true, data: { message: debugMsg } };
+  }
+  return { success: true, data: { message: reply } };
 }
 
 function geminiFlash(prompt, apiKey) {
@@ -557,7 +569,14 @@ function geminiFlash(prompt, apiKey) {
     payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
     muteHttpExceptions: true,
   });
-  const json = JSON.parse(response.getContentText());
+  const statusCode = response.getResponseCode();
+  const rawText    = response.getContentText();
+  console.log('[geminiFlash] HTTP ' + statusCode + '  raw(600): ' + rawText.substring(0, 600));
+  Logger.log('[geminiFlash] HTTP ' + statusCode + '  raw(600): ' + rawText.substring(0, 600));
+  const json = JSON.parse(rawText);
+  if (json.error) {
+    throw new Error('Gemini API error ' + statusCode + ': ' + (json.error.message || JSON.stringify(json.error)));
+  }
   return (json.candidates?.[0]?.content?.parts?.[0]?.text ?? '').trim();
 }
 
