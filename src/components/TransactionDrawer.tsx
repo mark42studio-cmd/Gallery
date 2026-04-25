@@ -82,10 +82,9 @@ export default function TransactionDrawer({
     return () => { cancelled = true; };
   }, [artworkId, isPrintmaking]);
 
-  // ── Fetch smart source pool (galleries with editions out) ──────
-  // Runs whenever artwork or txType changes, but only for check-in
+  // ── Fetch smart source pool — runs for ALL artworks on check-in ─
   useEffect(() => {
-    if (!artworkId || !isPrintmaking || txType !== 'check-in') {
+    if (!artworkId || txType !== 'check-in') {
       setQuickSources([]);
       return;
     }
@@ -96,7 +95,7 @@ export default function TransactionDrawer({
       .catch(() => {})
       .finally(() => { if (!cancelled) setSourcesLoading(false); });
     return () => { cancelled = true; };
-  }, [artworkId, isPrintmaking, txType]);
+  }, [artworkId, txType]);
 
   // ── Reset selection when transaction type changes ──────────────
   useEffect(() => {
@@ -168,7 +167,10 @@ export default function TransactionDrawer({
         });
       } else {
         if (txType === 'check-in') {
-          res = await api.checkIn(artworkId, qty, user.userId, user.displayName, notes);
+          const checkInNotes = sourceLocation
+            ? ('入庫自：' + sourceLocation + (notes ? '，' + notes : ''))
+            : notes;
+          res = await api.checkIn(artworkId, qty, user.userId, user.displayName, checkInNotes);
         } else {
           res = await api.checkOut(
             artworkId, qty, user.userId, user.displayName, notes,
@@ -283,62 +285,58 @@ export default function TransactionDrawer({
               )}
             </div>
 
+            {/* ── UNIVERSAL CHECK-IN: Smart Source Pool ────────── */}
+            {txType === 'check-in' && artworkId && (
+              <div className="space-y-2">
+                <label className={lbl}>
+                  來源
+                  <span className="ml-1 normal-case tracking-normal font-normal text-ash">
+                    （從哪裡回來的）
+                  </span>
+                </label>
+                {sourcesLoading ? (
+                  <p className="text-xs text-ash animate-pulse">載入來源中…</p>
+                ) : quickSources.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {quickSources.map((loc) => (
+                      <button
+                        key={loc}
+                        onClick={() => setSourceLocation((prev) => (prev === loc ? '' : loc))}
+                        className={`text-xs px-3 py-1.5 rounded-sm border transition-colors ${
+                          sourceLocation === loc
+                            ? 'bg-ink text-paper border-ink'
+                            : 'bg-paper text-ash border-smoke hover:border-charcoal'
+                        }`}
+                      >
+                        {loc}
+                      </button>
+                    ))}
+                    {sourceLocation && (
+                      <button
+                        onClick={() => setSourceLocation('')}
+                        className="text-xs px-2 py-1.5 text-ash hover:text-ink transition-colors"
+                      >
+                        ✕ 全部
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  !sourcesLoading && isPrintmaking && (
+                    <p className="text-xs text-ash">目前無版次在外（皆在家）。</p>
+                  )
+                )}
+                <input
+                  value={sourceLocation}
+                  onChange={(e) => setSourceLocation(e.target.value)}
+                  placeholder="或手動輸入來源畫廊…"
+                  className={inp}
+                />
+              </div>
+            )}
+
             {/* ── EDITION MODE ─────────────────────────────────── */}
             {isPrintmaking && artworkId && (
               <>
-                {/* ── CHECK-IN: Smart Source Pool ─────────────── */}
-                {txType === 'check-in' && (
-                  <div className="space-y-2">
-                    <label className={lbl}>
-                      來源
-                      <span className="ml-1 normal-case tracking-normal font-normal text-ash">
-                        （從哪裡回來的）
-                      </span>
-                    </label>
-
-                    {sourcesLoading ? (
-                      <p className="text-xs text-ash animate-pulse">載入來源中…</p>
-                    ) : quickSources.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {quickSources.map((loc) => (
-                          <button
-                            key={loc}
-                            onClick={() =>
-                              setSourceLocation((prev) => (prev === loc ? '' : loc))
-                            }
-                            className={`text-xs px-3 py-1.5 rounded-sm border transition-colors ${
-                              sourceLocation === loc
-                                ? 'bg-ink text-paper border-ink'
-                                : 'bg-paper text-ash border-smoke hover:border-charcoal'
-                            }`}
-                          >
-                            {loc}
-                          </button>
-                        ))}
-                        {sourceLocation && (
-                          <button
-                            onClick={() => setSourceLocation('')}
-                            className="text-xs px-2 py-1.5 text-ash hover:text-ink transition-colors"
-                          >
-                            ✕ 全部
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      !sourcesLoading && (
-                        <p className="text-xs text-ash">目前無版次在外（皆在家）。</p>
-                      )
-                    )}
-
-                    <input
-                      value={sourceLocation}
-                      onChange={(e) => setSourceLocation(e.target.value)}
-                      placeholder="或手動輸入來源畫廊…"
-                      className={inp}
-                    />
-                  </div>
-                )}
-
                 {/* Edition picker */}
                 <div className="space-y-2">
                   <label className={lbl}>

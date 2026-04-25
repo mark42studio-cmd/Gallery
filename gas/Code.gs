@@ -50,7 +50,7 @@ function doPost(e) {
   try {
     if (action === 'checkIn')          return jsonResponse(processTransaction(body, 'check-in'));
     if (action === 'checkOut')         return jsonResponse(processTransaction(body, 'check-out'));
-    if (action === 'createArtwork')    return jsonResponse(createArtwork(body));
+    if (action === 'createArtwork')    return jsonResponse(createNewArtwork(body));
     if (action === 'updateArtwork')    return jsonResponse(updateArtwork(body));
     if (action === 'updatePrice')      return jsonResponse(updateArtworkPrice(body));
     if (action === 'bulkUpdatePrices') return jsonResponse(bulkUpdatePrices(body));
@@ -88,32 +88,6 @@ function getArtworks() {
   return { success: true, data: artworks };
 }
 
-function createArtwork(body) {
-  if (!body.title || !body.artist) throw new Error('title and artist are required');
-  const sheet = getSheet(SHEET_ARTWORKS);
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-
-  const qty = Number(body.qty) || 0;
-  const artwork = {
-    id: 'art-' + Date.now(),
-    title: body.title || '',
-    artist: body.artist || '',
-    category: body.category || '',
-    status: qty > 0 ? 'in-stock' : 'out',
-    qty,
-    edition_total: body.edition_total != null && body.edition_total !== '' ? Number(body.edition_total) : '',
-    ap_count: body.ap_count != null && body.ap_count !== '' ? Number(body.ap_count) : '',
-    price: body.price != null && body.price !== '' ? Number(body.price) : '',
-    location: body.location || '',
-    imageUrl: body.imageUrl || '',
-    notes: body.notes || '',
-  };
-
-  const row = headers.map(h => (artwork[h] !== undefined ? artwork[h] : ''));
-  sheet.appendRow(row);
-  generateArtworkVector(artwork);
-  return { success: true, data: artwork };
-}
 
 function updateArtwork(body) {
   if (!body.id) throw new Error('id is required');
@@ -125,7 +99,7 @@ function updateArtwork(body) {
   const stIdx  = headers.indexOf('status');
 
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) !== String(body.id)) continue;
+    if (String(data[i][idIdx]).trim() !== String(body.id).trim()) continue;
     headers.forEach((h, j) => {
       if (h !== 'id' && h !== 'status' && h !== 'embedding' && body[h] !== undefined) {
         sheet.getRange(i + 1, j + 1).setValue(body[h]);
@@ -152,11 +126,11 @@ function updateArtworkStock(artworkId, delta) {
   const stCol   = headers.indexOf('status');
 
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idCol]) === String(artworkId)) {
+    if (String(data[i][idCol]).trim() === String(artworkId).trim()) {
       const newQty = Math.max(0, Number(data[i][qtyCol]) + delta);
       sheet.getRange(i + 1, qtyCol + 1).setValue(newQty);
       sheet.getRange(i + 1, stCol  + 1).setValue(newQty > 0 ? 'in-stock' : 'out');
-      return { title: data[i][headers.indexOf('title')], qty: newQty };
+      return { title: String(data[i][headers.indexOf('title')] || ''), qty: newQty };
     }
   }
   throw new Error('Artwork not found: ' + artworkId);
@@ -178,7 +152,7 @@ function updateArtworkPrice(body) {
   let oldPrice = 0;
   let found = false;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) !== String(artworkId)) continue;
+    if (String(data[i][idIdx]).trim() !== String(artworkId).trim()) continue;
     oldPrice = Number(data[i][priceIdx]) || 0;
     sheet.getRange(i + 1, priceIdx + 1).setValue(Number(newPrice));
     found = true;
@@ -298,7 +272,7 @@ function _updateArtworkLocation(artworkId, location) {
   const idIdx  = headers.indexOf('id');
   const locIdx = headers.indexOf('location');
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) !== String(artworkId)) continue;
+    if (String(data[i][idIdx]).trim() !== String(artworkId).trim()) continue;
     if (locIdx !== -1) sheet.getRange(i + 1, locIdx + 1).setValue(location);
     break;
   }
@@ -319,7 +293,7 @@ function getEditions(params) {
   const editions = [];
   for (let i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
-    if (String(data[i][artIdIdx]) !== String(artworkId)) continue;
+    if (String(data[i][artIdIdx]).trim() !== String(artworkId).trim()) continue;
     editions.push(rowToObject(headers, data[i]));
   }
   return { success: true, data: editions };
@@ -340,7 +314,7 @@ function getQuickSourceLocations(params) {
   const locations = {};
   for (let i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
-    if (String(data[i][artIdIdx]) !== String(artworkId)) continue;
+    if (String(data[i][artIdIdx]).trim() !== String(artworkId).trim()) continue;
     if (data[i][isSoldIdx]) continue;
     if (data[i][locCatIdx] === '家裡') continue;
     const detail = String(data[i][locDetIdx] || '').trim();
@@ -370,8 +344,8 @@ function editionTransaction(body) {
   let updated = 0;
 
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][artIdIdx]) !== String(artworkId)) continue;
-    if (!nums.includes(String(data[i][edNumIdx]))) continue;
+    if (String(data[i][artIdIdx]).trim() !== String(artworkId).trim()) continue;
+    if (!nums.includes(String(data[i][edNumIdx]).trim())) continue;
 
     const row = i + 1;
     if (txType === 'check-in') {
@@ -402,7 +376,7 @@ function editionTransaction(body) {
     txType === 'check-in'
       ? '入庫自：' + (source || '未指定')
       : outSubtype === 'sold'
-        ? '售予：' + (destination || '未知')
+        ? '售予：' + (destination || '未知') + (soldPrice ? '，成交價：NT$' + soldPrice : '')
         : '移轉至：' + (destination || '未知')
   );
   getSheet(SHEET_TRANSACTIONS).appendRow([
@@ -424,7 +398,7 @@ function _syncArtworkQty(artworkId) {
 
   let inStock = 0;
   for (let i = 1; i < edData.length; i++) {
-    if (String(edData[i][artIdIdx]) !== String(artworkId)) continue;
+    if (String(edData[i][artIdIdx]).trim() !== String(artworkId).trim()) continue;
     if (!edData[i][isSoldIdx]) inStock++;
   }
 
@@ -436,7 +410,7 @@ function _syncArtworkQty(artworkId) {
   const stIdx       = artHeaders.indexOf('status');
 
   for (let i = 1; i < artData.length; i++) {
-    if (String(artData[i][artIdColIdx]) !== String(artworkId)) continue;
+    if (String(artData[i][artIdColIdx]).trim() !== String(artworkId).trim()) continue;
     artSheet.getRange(i + 1, qtyIdx + 1).setValue(inStock);
     artSheet.getRange(i + 1, stIdx  + 1).setValue(inStock > 0 ? 'in-stock' : 'out');
     break;
@@ -450,7 +424,7 @@ function _getArtworkTitle(artworkId) {
   const idIdx    = headers.indexOf('id');
   const titleIdx = headers.indexOf('title');
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idIdx]) === String(artworkId)) return String(data[i][titleIdx] || '');
+    if (String(data[i][idIdx]).trim() === String(artworkId).trim()) return String(data[i][titleIdx] || '');
   }
   return '';
 }
