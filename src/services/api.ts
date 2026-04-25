@@ -67,6 +67,50 @@ async function parseJsonResponse<T>(res: Response): Promise<GASResponse<T>> {
   }
 }
 
+// Dedicated fetch for the AI chat endpoint.
+// Logs the raw response so we can see exactly what GAS returns, then
+// tolerates whatever key the script uses (reply / message / text / response).
+async function aiCommandFetch(body: Record<string, unknown>): Promise<GASResponse<AiCommandResult>> {
+  const url = requireUrl();
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+    });
+  } catch (networkErr) {
+    console.error('[AI Command] Network error:', networkErr);
+    throw networkErr;
+  }
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  const rawText = await res.text();
+  console.log('[AI Command] RAW GAS RESPONSE:', rawText);
+
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    throw new Error(`GAS returned non-JSON. Raw preview: ${rawText.substring(0, 150)}`);
+  }
+
+  if (data.error) {
+    return { success: false, error: String(data.error) };
+  }
+
+  const aiMessage = (data.reply ?? data.message ?? data.text ?? data.response) as string | undefined;
+
+  if (!aiMessage) {
+    throw new Error(`JSON parsed but no message key found. Available keys: ${Object.keys(data).join(', ')}`);
+  }
+
+  return { success: true, data: { message: aiMessage } };
+}
+
 export const api = {
   getArtworks: () =>
     gasGet<Artwork[]>({ action: 'getArtworks' }),
@@ -93,5 +137,5 @@ export const api = {
     gasPost<{ updated: number }>({ action: 'bulkUpdatePrices', artist, percentage, reason, userId, userName }),
 
   aiCommand: (command: string, userId: string, userName: string) =>
-    gasPost<AiCommandResult>({ action: 'aiCommand', command, userId, userName }),
+    aiCommandFetch({ action: 'aiCommand', command, userId, userName }),
 };
