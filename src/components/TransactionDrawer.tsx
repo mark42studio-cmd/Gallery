@@ -13,35 +13,42 @@ interface Props {
   onSuccess: () => void;
 }
 
-type TxType = 'check-in' | 'check-out';
+type TxType    = 'check-in' | 'check-out';
 type OutSubtype = 'transfer' | 'sold';
-
-const QUICK_DESTINATIONS = ['家裡', '首都畫廊', '双方藝廊'];
 
 export default function TransactionDrawer({
   open, onClose, artworks, user, initialArtwork, onSuccess,
 }: Props) {
-  const [txType, setTxType]             = useState<TxType>('check-in');
-  const [outSubtype, setOutSubtype]     = useState<OutSubtype>('transfer');
-  const [artworkId, setArtworkId]       = useState('');
+  const [txType, setTxType]               = useState<TxType>('check-in');
+  const [outSubtype, setOutSubtype]       = useState<OutSubtype>('transfer');
+  const [artworkId, setArtworkId]         = useState('');
+
   // Legacy qty mode
-  const [qty, setQty]                   = useState(1);
-  // Edition mode
-  const [editions, setEditions]         = useState<Edition[]>([]);
+  const [qty, setQty]                     = useState(1);
+
+  // Edition mode — shared
+  const [editions, setEditions]           = useState<Edition[]>([]);
   const [editionsLoading, setEditionsLoading] = useState(false);
-  const [selectedNums, setSelectedNums] = useState<(number | string)[]>([]);
-  const [destination, setDestination]   = useState('家裡');
-  const [buyerName, setBuyerName]       = useState('');
-  const [soldPrice, setSoldPrice]       = useState('');
+  const [selectedNums, setSelectedNums]   = useState<(number | string)[]>([]);
 
-  const [notes, setNotes]               = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback]         = useState<{ ok: boolean; msg: string } | null>(null);
+  // Edition mode — check-in: source (where the edition is coming FROM)
+  const [sourceLocation, setSourceLocation] = useState('');
+  const [quickSources, setQuickSources]   = useState<string[]>([]);
+  const [sourcesLoading, setSourcesLoading] = useState(false);
 
-  const selected    = artworks.find((a) => a.id === artworkId);
+  // Edition mode — check-out
+  const [destination, setDestination]     = useState('');
+  const [buyerName, setBuyerName]         = useState('');
+  const [soldPrice, setSoldPrice]         = useState('');
+
+  const [notes, setNotes]                 = useState('');
+  const [isSubmitting, setIsSubmitting]   = useState(false);
+  const [feedback, setFeedback]           = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const selected      = artworks.find((a) => a.id === artworkId);
   const isPrintmaking = selected?.category === '版畫';
 
-  // Reset and initialise every time the drawer opens
+  // ── Reset on open ──────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
     setArtworkId(initialArtwork?.id ?? '');
@@ -50,14 +57,16 @@ export default function TransactionDrawer({
     setQty(1);
     setEditions([]);
     setSelectedNums([]);
-    setDestination('家裡');
+    setSourceLocation('');
+    setQuickSources([]);
+    setDestination('');
     setBuyerName('');
     setSoldPrice('');
     setNotes('');
     setFeedback(null);
   }, [open, initialArtwork?.id]);
 
-  // Fetch editions whenever a printmaking artwork is chosen
+  // ── Fetch all editions when artwork changes ────────────────────
   useEffect(() => {
     if (!artworkId || !isPrintmaking) {
       setEditions([]);
@@ -73,13 +82,30 @@ export default function TransactionDrawer({
     return () => { cancelled = true; };
   }, [artworkId, isPrintmaking]);
 
-  // Reset selection when transaction type changes
+  // ── Fetch smart source pool (galleries with editions out) ──────
+  // Runs whenever artwork or txType changes, but only for check-in
+  useEffect(() => {
+    if (!artworkId || !isPrintmaking || txType !== 'check-in') {
+      setQuickSources([]);
+      return;
+    }
+    let cancelled = false;
+    setSourcesLoading(true);
+    api.getQuickSourceLocations(artworkId)
+      .then((res) => { if (!cancelled && res.success && res.data) setQuickSources(res.data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSourcesLoading(false); });
+    return () => { cancelled = true; };
+  }, [artworkId, isPrintmaking, txType]);
+
+  // ── Reset selection when transaction type changes ──────────────
   useEffect(() => {
     setSelectedNums([]);
-    setDestination(txType === 'check-in' ? '家裡' : '');
+    setSourceLocation('');
+    setDestination('');
   }, [txType]);
 
-  // --- helpers ---
+  // ── Helpers ───────────────────────────────────────────────────
 
   function toggleEdition(num: number | string) {
     setSelectedNums((prev) =>
@@ -87,13 +113,19 @@ export default function TransactionDrawer({
     );
   }
 
-  // Editions eligible for this operation
+  // Editions eligible for the current operation + optional source filter
   const availableEditions = editions.filter((e) => {
-    if (txType === 'check-in') return !e.is_sold && e.location_category !== '家裡';
-    return !e.is_sold; // transfer / sold: anything not already sold
+    if (e.is_sold) return false;
+    if (txType === 'check-in') {
+      if (e.location_category === '家裡') return false;
+      // If user picked a source gallery, narrow to exactly that location_detail
+      if (sourceLocation) return e.location_detail === sourceLocation;
+      return true;
+    }
+    return true; // transfer / sold: show all non-sold editions
   });
 
-  // --- submit ---
+  // ── Submit ────────────────────────────────────────────────────
 
   async function handleSubmit() {
     if (!artworkId || !user) return;
@@ -118,23 +150,21 @@ export default function TransactionDrawer({
     try {
       let res;
       if (isPrintmaking) {
-        const effectiveDestination =
-          txType === 'check-in'
-            ? destination || '家裡'
-            : outSubtype === 'transfer'
-            ? destination
-            : buyerName;
-
         res = await api.editionTransaction({
           artworkId,
           editionNumbers: selectedNums,
           txType,
-          outSubtype: txType === 'check-out' ? outSubtype : undefined,
-          destination: effectiveDestination,
+          outSubtype:  txType === 'check-out' ? outSubtype : undefined,
+          // check-in: record source for the transaction log; GAS always writes '家裡'
+          source:      txType === 'check-in' ? sourceLocation || undefined : undefined,
+          // check-out: destination = gallery name (transfer) or buyer name (sold)
+          destination: txType === 'check-out'
+            ? (outSubtype === 'transfer' ? destination : buyerName)
+            : undefined,
           soldPrice: txType === 'check-out' && outSubtype === 'sold' && soldPrice
             ? Number(soldPrice)
             : undefined,
-          userId: user.userId,
+          userId:   user.userId,
           userName: user.displayName,
           notes,
         });
@@ -249,6 +279,59 @@ export default function TransactionDrawer({
             {/* ── EDITION MODE ─────────────────────────────────── */}
             {isPrintmaking && artworkId && (
               <>
+                {/* ── CHECK-IN: Smart Source Pool ─────────────── */}
+                {txType === 'check-in' && (
+                  <div className="space-y-2">
+                    <label className={lbl}>
+                      來源
+                      <span className="ml-1 normal-case tracking-normal font-normal text-ash">
+                        （從哪裡回來的）
+                      </span>
+                    </label>
+
+                    {sourcesLoading ? (
+                      <p className="text-xs text-ash animate-pulse">載入來源中…</p>
+                    ) : quickSources.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {quickSources.map((loc) => (
+                          <button
+                            key={loc}
+                            onClick={() =>
+                              setSourceLocation((prev) => (prev === loc ? '' : loc))
+                            }
+                            className={`text-xs px-3 py-1.5 rounded-sm border transition-colors ${
+                              sourceLocation === loc
+                                ? 'bg-ink text-paper border-ink'
+                                : 'bg-paper text-ash border-smoke hover:border-charcoal'
+                            }`}
+                          >
+                            {loc}
+                          </button>
+                        ))}
+                        {sourceLocation && (
+                          <button
+                            onClick={() => setSourceLocation('')}
+                            className="text-xs px-2 py-1.5 text-ash hover:text-ink transition-colors"
+                          >
+                            ✕ 全部
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      !sourcesLoading && (
+                        <p className="text-xs text-ash">目前無版次在外（皆在家）。</p>
+                      )
+                    )}
+
+                    <input
+                      value={sourceLocation}
+                      onChange={(e) => setSourceLocation(e.target.value)}
+                      placeholder="或手動輸入來源畫廊…"
+                      className={inp}
+                    />
+                  </div>
+                )}
+
                 {/* Edition picker */}
                 <div className="space-y-2">
                   <label className={lbl}>
@@ -256,7 +339,9 @@ export default function TransactionDrawer({
                     {selectedNums.length > 0 && (
                       <span className="ml-1.5 normal-case tracking-normal font-semibold text-ink">
                         （已選：{[...selectedNums]
-                          .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }))
+                          .sort((a, b) =>
+                            String(a).localeCompare(String(b), undefined, { numeric: true })
+                          )
                           .join(', ')} 號）
                       </span>
                     )}
@@ -265,17 +350,23 @@ export default function TransactionDrawer({
                   {editionsLoading ? (
                     <p className="text-xs text-ash animate-pulse">載入版數中…</p>
                   ) : availableEditions.length === 0 ? (
-                    <p className="text-xs text-ash">沒有可操作的版號。</p>
+                    <p className="text-xs text-ash">
+                      {txType === 'check-in' && sourceLocation
+                        ? `「${sourceLocation}」目前無可入庫的版號。`
+                        : txType === 'check-in'
+                        ? '所有版次皆在家，無需入庫。'
+                        : '沒有可操作的版號。'}
+                    </p>
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {availableEditions.map((e) => {
-                        const active  = selectedNums.includes(e.edition_number);
+                        const active   = selectedNums.includes(e.edition_number);
                         const locLabel = e.location_detail
                           ? `${e.location_category}・${e.location_detail}`
                           : e.location_category;
                         return (
                           <button
-                            key={e.edition_number}
+                            key={String(e.edition_number)}
                             onClick={() => toggleEdition(e.edition_number)}
                             className={`flex flex-col items-center px-3 py-2 rounded-sm border text-xs transition-colors ${
                               active
@@ -294,39 +385,20 @@ export default function TransactionDrawer({
                   )}
                 </div>
 
-                {/* Destination — check-in or transfer */}
-                {(txType === 'check-in' || (txType === 'check-out' && outSubtype === 'transfer')) && (
-                  <div className="space-y-2">
-                    <label className={lbl}>
-                      {txType === 'check-in' ? '入庫目的地' : '移轉目的地'}
-                    </label>
-                    {txType === 'check-in' && (
-                      <div className="flex gap-2 flex-wrap">
-                        {QUICK_DESTINATIONS.map((loc) => (
-                          <button
-                            key={loc}
-                            onClick={() => setDestination(loc)}
-                            className={`text-xs px-3 py-1.5 rounded-sm border transition-colors ${
-                              destination === loc
-                                ? 'bg-ink text-paper border-ink'
-                                : 'bg-paper text-ash border-smoke hover:border-charcoal'
-                            }`}
-                          >
-                            {loc}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                {/* CHECK-OUT transfer: destination gallery */}
+                {txType === 'check-out' && outSubtype === 'transfer' && (
+                  <div className="space-y-1.5">
+                    <label className={lbl}>移轉目的地</label>
                     <input
                       value={destination}
                       onChange={(e) => setDestination(e.target.value)}
-                      placeholder={txType === 'check-in' ? '或輸入自訂位置…' : '例：首都畫廊'}
+                      placeholder="例：首都畫廊"
                       className={inp}
                     />
                   </div>
                 )}
 
-                {/* Sold fields */}
+                {/* CHECK-OUT sold: buyer + price */}
                 {txType === 'check-out' && outSubtype === 'sold' && (
                   <div className="space-y-3">
                     <div className="space-y-1.5">

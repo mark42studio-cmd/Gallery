@@ -5,7 +5,8 @@ export interface EditionTransactionPayload {
   editionNumbers: (number | string)[];
   txType: 'check-in' | 'check-out';
   outSubtype?: 'transfer' | 'sold';
-  destination?: string;
+  source?: string;      // check-in: which gallery the editions came FROM
+  destination?: string; // transfer: target gallery; sold: buyer name
   soldPrice?: number;
   userId: string;
   userName: string;
@@ -155,6 +156,9 @@ export const api = {
 
   getEditions: (artworkId: string) =>
     gasGet<Edition[]>({ action: 'getEditions', artworkId }),
+
+  getQuickSourceLocations: (artworkId: string) =>
+    gasGet<string[]>({ action: 'getQuickSourceLocations', artworkId }),
 
   editionTransaction: (payload: EditionTransactionPayload) =>
     gasPost<{ updated: number }>({ action: 'editionTransaction', ...payload }),
