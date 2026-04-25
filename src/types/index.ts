@@ -1,12 +1,24 @@
 export type ArtworkCategory = '油畫' | '雕塑' | '多媒材' | '版畫' | '膠彩';
-
 export const ARTWORK_CATEGORIES: ArtworkCategory[] = ['油畫', '雕塑', '多媒材', '版畫', '膠彩'];
+
+export type LocationCategory = '家裡' | '畫廊' | '已售出';
+
+export interface Edition {
+  edition_number: number | string; // string for AP editions, e.g. "AP1"
+  location_category: LocationCategory;
+  location_detail?: string;
+  is_sold: boolean;
+  sold_price?: number;
+  is_framed: boolean;
+  notes?: string;
+}
 
 export interface Artwork {
   id: string;
   title: string;
   artist: string;
   category?: ArtworkCategory | '';
+  // Legacy aggregate fields (kept for backward compat with existing UI)
   status: 'in-stock' | 'out';
   qty: number;
   edition_total?: number | '';
@@ -15,6 +27,14 @@ export interface Artwork {
   imageUrl?: string;
   location?: string;
   notes?: string;
+  // New edition-aware fields
+  creation_year?: number;
+  paper_size?: string;
+  image_size?: string;
+  total_editions?: number;
+  price_unframed?: number;
+  price_frame?: number;
+  editions?: Edition[];
 }
 
 export interface Transaction {

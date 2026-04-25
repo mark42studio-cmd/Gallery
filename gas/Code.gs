@@ -623,3 +623,40 @@ function rowToObject(headers, row) {
     return obj;
   }, {});
 }
+
+  function createNewArtwork(payload) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const artworkSheet = ss.getSheetByName('Artworks');
+    const editionSheet = ss.getSheetByName('Editions');
+
+    const newId = "art-" + new Date().getTime();
+    artworkSheet.appendRow([
+      newId,
+      payload.title,
+      payload.artist,
+      payload.paper_size || '',
+      payload.image_size || '',
+      payload.price_unframed || payload.price || 0,
+      payload.price_frame || 0,
+      payload.total_editions || payload.edition_total || 0,
+      payload.ap_count || 0,
+      payload.creation_year || '',
+    ]);
+
+    const totalEditions = Number(payload.total_editions || payload.edition_total || 0);
+    if (totalEditions > 0 && editionSheet) {
+      const rows = [];
+      for (let i = 1; i <= totalEditions; i++) {
+        rows.push([
+          newId, i, '家裡', '', false,
+          payload.price_unframed || payload.price || 0,
+          false, ''
+        ]);
+      }
+      const lastRow = editionSheet.getLastRow();
+      editionSheet.getRange(lastRow + 1, 1, rows.length, 8).setValues(rows);
+    }
+
+    return { success: true, message: "作品及 " + totalEditions + " 件版數已建立，定價 " + (payload.price_unframed ||
+  payload.price) };
+  }

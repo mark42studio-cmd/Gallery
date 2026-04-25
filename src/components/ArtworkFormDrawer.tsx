@@ -15,8 +15,9 @@ interface Props {
 
 const BLANK = {
   title: '', artist: '', category: '' as ArtworkCategory | '',
-  qty: 1, edition_total: '', ap_count: '', price: '',
+  qty: 1, edition_total: '', ap_count: '', price: '', price_frame: '',
   imageUrl: '', location: '', notes: '',
+  creation_year: '', paper_size: '', image_size: '',
 };
 
 export default function ArtworkFormDrawer({ open, onClose, artwork, user: _user, onSuccess }: Props) {
@@ -37,9 +38,13 @@ export default function ArtworkFormDrawer({ open, onClose, artwork, user: _user,
         edition_total: artwork.edition_total != null && artwork.edition_total !== '' ? String(artwork.edition_total) : '',
         ap_count: artwork.ap_count != null && artwork.ap_count !== '' ? String(artwork.ap_count) : '',
         price: artwork.price != null && artwork.price !== '' ? String(artwork.price) : '',
+        price_frame: artwork.price_frame != null ? String(artwork.price_frame) : '',
         imageUrl: artwork.imageUrl || '',
         location: artwork.location || '',
         notes: artwork.notes || '',
+        creation_year: artwork.creation_year != null ? String(artwork.creation_year) : '',
+        paper_size: artwork.paper_size || '',
+        image_size: artwork.image_size || '',
       });
     } else {
       setForm(BLANK);
@@ -56,12 +61,19 @@ export default function ArtworkFormDrawer({ open, onClose, artwork, user: _user,
     setLoading(true);
     setFeedback(null);
     try {
+      const editionTotal = isPrintmaking && form.edition_total ? Number(form.edition_total) : undefined;
       const payload = {
         ...form,
         qty: Number(form.qty) || 0,
-        edition_total: isPrintmaking && form.edition_total ? Number(form.edition_total) : undefined,
+        edition_total: editionTotal,
+        total_editions: editionTotal,
         ap_count: isPrintmaking && form.ap_count ? Number(form.ap_count) : undefined,
         price: form.price ? Number(form.price) : undefined,
+        price_unframed: form.price ? Number(form.price) : undefined,
+        price_frame: form.price_frame ? Number(form.price_frame) : undefined,
+        creation_year: form.creation_year ? Number(form.creation_year) : undefined,
+        paper_size: isPrintmaking && form.paper_size ? form.paper_size : undefined,
+        image_size: isPrintmaking && form.image_size ? form.image_size : undefined,
       };
       const res = isEdit && artwork
         ? await api.updateArtwork({ ...artwork, ...payload } as Artwork)
@@ -129,6 +141,16 @@ export default function ArtworkFormDrawer({ open, onClose, artwork, user: _user,
                     onChange={e => setForm(f => ({ ...f, ap_count: e.target.value }))}
                     placeholder="e.g. 5" className={inp} />
                 </Field>
+                <Field label="紙張尺寸">
+                  <input value={form.paper_size}
+                    onChange={e => setForm(f => ({ ...f, paper_size: e.target.value }))}
+                    placeholder="e.g. 38×56cm" className={inp} />
+                </Field>
+                <Field label="圖像尺寸">
+                  <input value={form.image_size}
+                    onChange={e => setForm(f => ({ ...f, image_size: e.target.value }))}
+                    placeholder="e.g. 30×40cm" className={inp} />
+                </Field>
               </div>
             )}
 
@@ -138,10 +160,23 @@ export default function ArtworkFormDrawer({ open, onClose, artwork, user: _user,
                   onChange={e => setForm(f => ({ ...f, qty: Number(e.target.value) }))}
                   className={inp} />
               </Field>
-              <Field label="定價 (NT$)">
+              <Field label="創作年份">
+                <input type="number" min={1900} max={2100} value={form.creation_year}
+                  onChange={e => setForm(f => ({ ...f, creation_year: e.target.value }))}
+                  placeholder="e.g. 2023" className={inp} />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="定價-未裱框 (NT$)">
                 <input type="number" min={0} value={form.price}
                   onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
                   placeholder="e.g. 80000" className={inp} />
+              </Field>
+              <Field label="裱框加價 (NT$)">
+                <input type="number" min={0} value={form.price_frame}
+                  onChange={e => setForm(f => ({ ...f, price_frame: e.target.value }))}
+                  placeholder="e.g. 5000" className={inp} />
               </Field>
             </div>
 

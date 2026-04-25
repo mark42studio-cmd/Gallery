@@ -1,4 +1,16 @@
-import type { Artwork, Transaction, PriceHistory, GASResponse, AiCommandResult } from '../types';
+import type { Artwork, Edition, Transaction, PriceHistory, GASResponse, AiCommandResult } from '../types';
+
+export interface EditionTransactionPayload {
+  artworkId: string;
+  editionNumbers: (number | string)[];
+  txType: 'check-in' | 'check-out';
+  outSubtype?: 'transfer' | 'sold';
+  destination?: string;
+  soldPrice?: number;
+  userId: string;
+  userName: string;
+  notes?: string;
+}
 
 const GAS_URL_KEY = 'gallery_gas_url';
 
@@ -140,6 +152,12 @@ export const api = {
 
   bulkUpdatePrices: (artist: string, percentage: number, reason: string, userId: string, userName: string) =>
     gasPost<{ updated: number }>({ action: 'bulkUpdatePrices', artist, percentage, reason, userId, userName }),
+
+  getEditions: (artworkId: string) =>
+    gasGet<Edition[]>({ action: 'getEditions', artworkId }),
+
+  editionTransaction: (payload: EditionTransactionPayload) =>
+    gasPost<{ updated: number }>({ action: 'editionTransaction', ...payload }),
 
   aiCommand: (command: string, userId: string, userName: string) =>
     aiCommandFetch({ action: 'aiCommand', command, userId, userName }),
