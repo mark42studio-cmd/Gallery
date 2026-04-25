@@ -1,4 +1,4 @@
-import type { Artwork, Edition, Transaction, PriceHistory, GASResponse, AiCommandResult } from '../types';
+import type { Artwork, Edition, Transaction, PriceHistory, GASResponse, AiCommandResult, PreparedTx } from '../types';
 
 export interface EditionTransactionPayload {
   artworkId: string;
@@ -115,15 +115,28 @@ async function aiCommandFetch(body: Record<string, unknown>): Promise<GASRespons
     return { success: false, error: String(parsed.error) };
   }
 
+  // Multi-turn: PREPARE_TRANSACTION — check top-level intent OR nested data.intent
   const nested = parsed.data as Record<string, unknown> | undefined;
-  const aiMessage = (nested?.message || parsed.message || parsed.reply) as string | undefined;
+  const topIntent    = parsed.intent as string | undefined;
+  const nestedIntent = nested?.intent as string | undefined;
 
-  if (!aiMessage && parsed.success !== false) {
-    throw new Error(`JSON parsed but no message key found. Available keys: ${Object.keys(parsed).join(', ')}`);
+  if (topIntent === 'PREPARE_TRANSACTION' || nestedIntent === 'PREPARE_TRANSACTION') {
+    const prepared = (nested?.prepared ?? nested ?? parsed.data) as PreparedTx;
+    return { success: true, data: { intent: 'PREPARE_TRANSACTION', prepared } };
   }
 
+  const aiMessage = (nested?.message ?? parsed.message ?? parsed.reply) as string | undefined;
+
   if (!aiMessage) {
-    return { success: false, error: 'GAS returned success:false with no message.' };
+    // Don't throw — surface a readable message instead of crashing the UI
+    const keys = Object.keys(parsed).join(', ');
+    console.warn('[AI Command] No message key found. Keys:', keys);
+    return {
+      success: false,
+      error: parsed.success === false
+        ? (String(parsed.error ?? 'GAS 回傳失敗，請重試。'))
+        : `AI 回應格式錯誤（keys: ${keys}）`,
+    };
   }
 
   return { success: true, data: { message: aiMessage } };
@@ -168,4 +181,26 @@ export const api = {
 
   aiCommand: (command: string, userId: string, userName: string) =>
     aiCommandFetch({ action: 'aiCommand', command, userId, userName }),
+
+  uploadImage: (base64Data: string, fileName: string) =>
+    gasPost<{ url: string; fileId: string }>({ action: 'uploadImage', base64Data, fileName }),
+
+  executeConfirmedTransaction: (payload: {
+    artworkId: string; txAction: string; qty: number;
+    outSubtype?: string; destination?: string; buyerName?: string; soldPrice?: number;
+    userId: string; userName: string; notes?: string;
+  }) =>
+    gasPost<{ message: string }>({
+      action:      'executeConfirmedTransaction',
+      txAction:    payload.txAction,
+      artworkId:   payload.artworkId,
+      qty:         payload.qty,
+      outSubtype:  payload.outSubtype,
+      destination: payload.destination,
+      buyerName:   payload.buyerName,
+      soldPrice:   payload.soldPrice,
+      userId:      payload.userId,
+      userName:    payload.userName,
+      notes:       payload.notes,
+    }),
 };

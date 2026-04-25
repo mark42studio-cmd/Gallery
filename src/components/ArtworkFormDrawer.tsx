@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Drawer } from 'vaul';
-import { X } from 'lucide-react';
+import { X, Camera, Loader2, ImageOff } from 'lucide-react';
 import type { Artwork, LiffUser, ArtworkCategory } from '../types';
 import { ARTWORK_CATEGORIES } from '../types';
 import { api } from '../services/api';
@@ -24,6 +24,7 @@ export default function ArtworkFormDrawer({ open, onClose, artwork, user: _user,
   const isEdit = !!artwork;
   const [form, setForm] = useState(BLANK);
   const [loading, setLoading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
@@ -56,6 +57,10 @@ export default function ArtworkFormDrawer({ open, onClose, artwork, user: _user,
   async function handleSubmit() {
     if (!form.title.trim() || !form.artist.trim()) {
       setFeedback({ ok: false, msg: '作品名稱和藝術家為必填。' });
+      return;
+    }
+    if (imageUploading) {
+      setFeedback({ ok: false, msg: '請等待圖片上傳完成。' });
       return;
     }
     setLoading(true);
@@ -185,9 +190,12 @@ export default function ArtworkFormDrawer({ open, onClose, artwork, user: _user,
                 placeholder="e.g. A-03" className={inp} />
             </Field>
 
-            <Field label="圖片網址">
-              <input value={form.imageUrl} onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))}
-                placeholder="https://..." className={inp} />
+            <Field label="作品圖片">
+              <ImageUploader
+                value={form.imageUrl}
+                onChange={(url) => setForm(f => ({ ...f, imageUrl: url }))}
+                onUploadingChange={setImageUploading}
+              />
             </Field>
 
             <Field label="備註">
@@ -204,10 +212,10 @@ export default function ArtworkFormDrawer({ open, onClose, artwork, user: _user,
             )}
             <button
               onClick={handleSubmit}
-              disabled={loading}
+              disabled={loading || imageUploading}
               className="w-full bg-ink text-paper py-3 rounded-sm text-sm font-semibold tracking-wide disabled:opacity-40 hover:bg-charcoal active:scale-[0.98] transition-all"
             >
-              {loading ? '處理中…' : isEdit ? '儲存變更' : '新增作品'}
+              {loading ? '處理中…' : imageUploading ? '圖片上傳中…' : isEdit ? '儲存變更' : '新增作品'}
             </button>
           </div>
         </Drawer.Content>
@@ -215,6 +223,129 @@ export default function ArtworkFormDrawer({ open, onClose, artwork, user: _user,
     </Drawer.Root>
   );
 }
+
+// ── Image Uploader ────────────────────────────────────────────────────────────
+
+interface ImageUploaderProps {
+  value: string;
+  onChange: (url: string) => void;
+  onUploadingChange: (uploading: boolean) => void;
+}
+
+function ImageUploader({ value, onChange, onUploadingChange }: ImageUploaderProps) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function setUploadingState(v: boolean) {
+    setUploading(v);
+    onUploadingChange(v);
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingState(true);
+    setError('');
+    try {
+      const base64 = await compressImage(file, 1200, 0.7);
+      const safeFileName = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const res = await api.uploadImage(base64, safeFileName);
+      if (!res.success || !res.data?.url) throw new Error(res.error ?? '上傳失敗');
+      onChange(res.data.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '上傳失敗，請重試。');
+    } finally {
+      setUploadingState(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Preview */}
+      {value && (
+        <div className="relative rounded-sm overflow-hidden border border-smoke bg-mist">
+          <img
+            src={value}
+            alt="作品圖片預覽"
+            className="w-full aspect-video object-cover"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          />
+          <button
+            type="button"
+            onClick={() => onChange('')}
+            className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-ink/70 text-paper flex items-center justify-center text-sm leading-none hover:bg-ink transition-colors"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Upload trigger */}
+      <input
+        ref={fileRef}
+        id="artwork-image-upload"
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleFile}
+        className="hidden"
+        disabled={uploading}
+      />
+      <label
+        htmlFor="artwork-image-upload"
+        className={`flex items-center justify-center gap-2 w-full border border-dashed border-smoke rounded-sm py-2.5 text-sm transition-colors cursor-pointer ${
+          uploading
+            ? 'opacity-50 cursor-wait text-ash'
+            : 'text-ash hover:border-charcoal hover:text-charcoal hover:bg-mist/40'
+        }`}
+      >
+        {uploading ? (
+          <><Loader2 size={14} className="animate-spin" />上傳中…</>
+        ) : value ? (
+          <><Camera size={14} />更換圖片</>
+        ) : (
+          <><Camera size={14} />拍照或選擇圖片</>
+        )}
+      </label>
+
+      {/* No-image placeholder hint */}
+      {!value && !uploading && (
+        <div className="flex items-center gap-1.5 text-[10px] text-ash/60">
+          <ImageOff size={10} />
+          <span>支援 JPG、PNG，拍照即可上傳</span>
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+// Client-side image compression via canvas
+async function compressImage(file: File, maxWidth: number, quality: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const w = Math.min(img.width, maxWidth);
+      const h = Math.round((img.height * w) / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width  = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Canvas not supported'));
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('圖片讀取失敗')); };
+    img.src = objectUrl;
+  });
+}
+
+// ── Shared styles ─────────────────────────────────────────────────────────────
 
 const inp = 'w-full px-3 py-2 border border-smoke rounded-sm bg-paper text-sm text-ink placeholder-ash focus:outline-none focus:ring-1 focus:ring-ink';
 

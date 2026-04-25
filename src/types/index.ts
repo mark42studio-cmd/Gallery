@@ -72,7 +72,23 @@ export interface GASResponse<T = unknown> {
   message?: string;
 }
 
+export interface PreparedTx {
+  artworkId: string;
+  title: string;
+  artist: string;
+  category: string;
+  currentQty: number;
+  action: 'check-in' | 'check-out';
+  qty: number;
+  outSubtype?: 'transfer' | 'sold' | null;
+  userId: string;
+  userName: string;
+  notes?: string;
+}
+
 export interface AiCommandResult {
-  message: string;
+  message?: string;
+  intent?: string;
+  prepared?: PreparedTx;
   artworksUpdated?: Artwork[];
 }

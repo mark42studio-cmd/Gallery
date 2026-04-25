@@ -13,11 +13,11 @@ export default function ArtworkCard({ artwork, onClick, onEditClick, onPriceClic
   const hasPrice = Number(artwork.price) > 0;
 
   return (
-    <div className="w-full bg-paper border border-smoke rounded-sm shadow-card overflow-hidden">
+    <div className="w-full h-full flex flex-col bg-paper border border-smoke rounded-sm shadow-card overflow-hidden">
       {/* Main clickable area → transaction drawer */}
       <button
         onClick={() => onClick?.(artwork)}
-        className="w-full text-left hover:shadow-lifted active:scale-[0.98] transition-all duration-150"
+        className="flex-1 w-full text-left hover:shadow-lifted active:scale-[0.98] transition-all duration-150"
         aria-label={`${artwork.title} by ${artwork.artist}`}
       >
         <div className="aspect-square bg-mist relative overflow-hidden">

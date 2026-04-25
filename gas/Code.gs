@@ -2,10 +2,11 @@
  * Gallery Warehouse Management — Google Apps Script Backend
  *
  * SETUP:
- * 1. Create a Google Spreadsheet with three sheets:
+ * 1. Create a Google Spreadsheet with sheets:
  *    - "Artworks"      columns: id | title | artist | category | status | qty | edition_total | ap_count | price | location | imageUrl | notes | embedding
  *    - "Transactions"  columns: id | artworkId | artworkTitle | type | qty | date | userId | userName | notes
  *    - "PriceHistory"  columns: id | artworkId | oldPrice | newPrice | date | reason | userId
+ *    - "Editions"      columns: artworkId | edition_number | location_category | location_detail | is_sold | sold_price | is_framed | notes
  * 2. Paste this script in Extensions → Apps Script.
  * 3. Deploy → New Deployment → Web App
  *    - Execute as: Me
@@ -13,8 +14,12 @@
  * 4. Copy the deployment URL and paste in the app's Settings page.
  *
  * AI Commands via Gemini:
- *   Set the script property "GEMINI_API_KEY" in Project Settings → Script Properties.
+ *   Set script property "GEMINI_API_KEY" in Project Settings → Script Properties.
  *   The "embedding" column in Artworks is auto-filled via text-embedding-004 on create/update.
+ *
+ * Image uploads:
+ *   Artwork images are stored in a Google Drive folder named "Gallery_Images".
+ *   Files are set to "Anyone with link can view" and the thumbnail URL is saved to imageUrl.
  */
 
 const SHEET_ARTWORKS      = 'Artworks';
@@ -48,15 +53,16 @@ function doPost(e) {
 
   const action = body.action;
   try {
-    if (action === 'checkIn')          return jsonResponse(processTransaction(body, 'check-in'));
-    if (action === 'checkOut')         return jsonResponse(processTransaction(body, 'check-out'));
-    if (action === 'createArtwork')    return jsonResponse(createNewArtwork(body));
-    if (action === 'updateArtwork')    return jsonResponse(updateArtwork(body));
-    if (action === 'updatePrice')      return jsonResponse(updateArtworkPrice(body));
-    if (action === 'bulkUpdatePrices') return jsonResponse(bulkUpdatePrices(body));
-    if (action === 'aiCommand')          return jsonResponse(processAiCommand(body));
-    if (action === 'editionTransaction') return jsonResponse(editionTransaction(body));
-    if (action === 'createNewArtwork')   return jsonResponse(createNewArtwork(body));
+    if (action === 'checkIn')                        return jsonResponse(processTransaction(body, 'check-in'));
+    if (action === 'checkOut')                       return jsonResponse(processTransaction(body, 'check-out'));
+    if (action === 'createArtwork')                  return jsonResponse(createNewArtwork(body));
+    if (action === 'updateArtwork')                  return jsonResponse(updateArtwork(body));
+    if (action === 'updatePrice')                    return jsonResponse(updateArtworkPrice(body));
+    if (action === 'bulkUpdatePrices')               return jsonResponse(bulkUpdatePrices(body));
+    if (action === 'aiCommand')                      return jsonResponse(processAiCommand(body));
+    if (action === 'executeConfirmedTransaction')    return jsonResponse(executeConfirmedTransaction(body));
+    if (action === 'editionTransaction')             return jsonResponse(editionTransaction(body));
+    if (action === 'uploadImage')                    return jsonResponse(uploadImageToDrive(body.base64Data, body.fileName));
     return jsonResponse({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonResponse({
@@ -82,12 +88,11 @@ function getArtworks() {
     .filter(row => row[0])
     .map(row => {
       const obj = rowToObject(headers, row);
-      delete obj.embedding; // Don't send large embedding vectors to frontend
+      delete obj.embedding;
       return obj;
     });
   return { success: true, data: artworks };
 }
-
 
 function updateArtwork(body) {
   if (!body.id) throw new Error('id is required');
@@ -109,7 +114,6 @@ function updateArtwork(body) {
       const newQty = Number(body.qty) || 0;
       sheet.getRange(i + 1, stIdx + 1).setValue(newQty > 0 ? 'in-stock' : 'out');
     }
-    // Re-read the full updated row to regenerate embedding
     const updatedRow = sheet.getRange(i + 1, 1, 1, headers.length).getValues()[0];
     generateArtworkVector(rowToObject(headers, updatedRow));
     return { success: true, data: body };
@@ -235,7 +239,6 @@ function processTransaction(body, type) {
   const delta   = type === 'check-in' ? Number(qty) : -Number(qty);
   const updated = updateArtworkStock(artworkId, delta);
 
-  // Non-print check-out: persist buyer/destination on the Artworks row
   if (type === 'check-out') {
     if (outSubtype === 'sold' && buyerName) {
       _updateArtworkLocation(artworkId, '已售：' + buyerName);
@@ -279,7 +282,6 @@ function _updateArtworkLocation(artworkId, location) {
 }
 
 // ── Editions ──────────────────────────────────────────────────────────────────
-// Editions sheet columns: artworkId | edition_number | location_category | location_detail | is_sold | sold_price | is_framed | notes
 
 function getEditions(params) {
   const artworkId = params.artworkId;
@@ -303,23 +305,43 @@ function getQuickSourceLocations(params) {
   const artworkId = params.artworkId;
   if (!artworkId) return { success: false, error: 'artworkId is required' };
 
-  const sheet   = getSheet('Editions');
-  const data    = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const artIdIdx  = headers.indexOf('artworkId');
-  const isSoldIdx = headers.indexOf('is_sold');
-  const locCatIdx = headers.indexOf('location_category');
-  const locDetIdx = headers.indexOf('location_detail');
+  const edSheet   = getSheet('Editions');
+  const edData    = edSheet.getDataRange().getValues();
+  const edHeaders = edData[0];
+  const artIdIdx  = edHeaders.indexOf('artworkId');
+  const isSoldIdx = edHeaders.indexOf('is_sold');
+  const locCatIdx = edHeaders.indexOf('location_category');
+  const locDetIdx = edHeaders.indexOf('location_detail');
 
   const locations = {};
-  for (let i = 1; i < data.length; i++) {
-    if (!data[i][0]) continue;
-    if (String(data[i][artIdIdx]).trim() !== String(artworkId).trim()) continue;
-    if (data[i][isSoldIdx]) continue;
-    if (data[i][locCatIdx] === '家裡') continue;
-    const detail = String(data[i][locDetIdx] || '').trim();
-    if (detail) locations[detail] = true;
+  for (let i = 1; i < edData.length; i++) {
+    if (!edData[i][0]) continue;
+    if (String(edData[i][artIdIdx]).trim() !== String(artworkId).trim()) continue;
+    const rawSold = edData[i][isSoldIdx];
+    const isSold  = rawSold === true || String(rawSold).toUpperCase() === 'TRUE';
+    if (isSold) continue;
+    const locCat = String(edData[i][locCatIdx] || '').trim();
+    if (locCat === '家裡' || locCat === '自家' || locCat === '') continue;
+    const detail = String(edData[i][locDetIdx] || '').trim();
+    const key = detail || locCat;
+    if (key) locations[key] = true;
   }
+
+  // Fallback: non-print artworks store location in Artworks.location
+  if (Object.keys(locations).length === 0) {
+    const artSheet   = getSheet(SHEET_ARTWORKS);
+    const artData    = artSheet.getDataRange().getValues();
+    const artHeaders = artData[0];
+    const idIdx      = artHeaders.indexOf('id');
+    const locIdx     = artHeaders.indexOf('location');
+    for (let i = 1; i < artData.length; i++) {
+      if (String(artData[i][idIdx]).trim() !== String(artworkId).trim()) continue;
+      const loc = String(artData[i][locIdx] || '').trim();
+      if (loc && loc !== '家裡' && loc !== '自家') locations[loc] = true;
+      break;
+    }
+  }
+
   return { success: true, data: Object.keys(locations) };
 }
 
@@ -370,6 +392,7 @@ function editionTransaction(body) {
     updated++;
   }
 
+  // Atomic qty sync — reads edition rows and overwrites Artworks qty
   _syncArtworkQty(artworkId);
 
   const txNotes = notes || (
@@ -389,30 +412,43 @@ function editionTransaction(body) {
   return { success: true, data: { updated } };
 }
 
+/**
+ * Atomic qty sync: counts every NON-SOLD edition row for this artwork
+ * and overwrites qty + status in Artworks sheet.
+ * Guard: skips if no edition rows exist (non-print artwork).
+ */
 function _syncArtworkQty(artworkId) {
   const edSheet   = getSheet('Editions');
   const edData    = edSheet.getDataRange().getValues();
   const edHeaders = edData[0];
-  const artIdIdx  = edHeaders.indexOf('artworkId');
-  const isSoldIdx = edHeaders.indexOf('is_sold');
+  const edArtIdIdx  = edHeaders.indexOf('artworkId');
+  const edIsSoldIdx = edHeaders.indexOf('is_sold');
 
+  let editionRows = 0;
   let inStock = 0;
-  for (let i = 1; i < edData.length; i++) {
-    if (String(edData[i][artIdIdx]).trim() !== String(artworkId).trim()) continue;
-    if (!edData[i][isSoldIdx]) inStock++;
+  for (let r = 1; r < edData.length; r++) {
+    if (!edData[r][0]) continue;
+    if (String(edData[r][edArtIdIdx]).trim() !== String(artworkId).trim()) continue;
+    editionRows++;
+    const rawSold = edData[r][edIsSoldIdx];
+    const isSold  = rawSold === true || String(rawSold).toUpperCase() === 'TRUE';
+    if (!isSold) inStock++;
   }
 
-  const artSheet   = getSheet(SHEET_ARTWORKS);
-  const artData    = artSheet.getDataRange().getValues();
-  const artHeaders = artData[0];
+  // Non-print artworks have no edition rows — leave their qty alone
+  if (editionRows === 0) return;
+
+  const artSheet    = getSheet(SHEET_ARTWORKS);
+  const artData     = artSheet.getDataRange().getValues();
+  const artHeaders  = artData[0];
   const artIdColIdx = artHeaders.indexOf('id');
   const qtyIdx      = artHeaders.indexOf('qty');
   const stIdx       = artHeaders.indexOf('status');
 
-  for (let i = 1; i < artData.length; i++) {
-    if (String(artData[i][artIdColIdx]).trim() !== String(artworkId).trim()) continue;
-    artSheet.getRange(i + 1, qtyIdx + 1).setValue(inStock);
-    artSheet.getRange(i + 1, stIdx  + 1).setValue(inStock > 0 ? 'in-stock' : 'out');
+  for (let s = 1; s < artData.length; s++) {
+    if (String(artData[s][artIdColIdx]).trim() !== String(artworkId).trim()) continue;
+    artSheet.getRange(s + 1, qtyIdx + 1).setValue(inStock);
+    artSheet.getRange(s + 1, stIdx  + 1).setValue(inStock > 0 ? 'in-stock' : 'out');
     break;
   }
 }
@@ -427,6 +463,45 @@ function _getArtworkTitle(artworkId) {
     if (String(data[i][idIdx]).trim() === String(artworkId).trim()) return String(data[i][titleIdx] || '');
   }
   return '';
+}
+
+// ── Image Upload ──────────────────────────────────────────────────────────────
+
+/**
+ * Uploads a base64-encoded image to a "Gallery_Images" folder in Google Drive,
+ * sets public sharing, and returns a thumbnail URL safe for use as <img src>.
+ */
+function uploadImageToDrive(base64Data, fileName) {
+  if (!base64Data) throw new Error('base64Data is required');
+
+  // Strip data-URL prefix if present (data:image/jpeg;base64,...)
+  const parts     = String(base64Data).split(',');
+  const pureB64   = parts.length > 1 ? parts[1] : parts[0];
+  const headerStr = parts.length > 1 ? parts[0] : '';
+  const mimeType  = headerStr.indexOf('png') !== -1 ? 'image/png'
+                  : headerStr.indexOf('webp') !== -1 ? 'image/webp'
+                  : 'image/jpeg';
+
+  const safeName = (fileName || ('img-' + Date.now() + '.jpg'))
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+
+  // Find or create the Gallery_Images folder
+  const folderIter = DriveApp.getFoldersByName('Gallery_Images');
+  const folder = folderIter.hasNext() ? folderIter.next() : DriveApp.createFolder('Gallery_Images');
+
+  const decoded = Utilities.base64Decode(pureB64);
+  const blob    = Utilities.newBlob(decoded, mimeType, safeName);
+  const file    = folder.createFile(blob);
+
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  const fileId     = file.getId();
+  const thumbUrl   = 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
+
+  console.log('[uploadImageToDrive] uploaded: ' + safeName + '  id: ' + fileId);
+  Logger.log('[uploadImageToDrive] uploaded: ' + safeName + '  id: ' + fileId);
+
+  return { success: true, data: { url: thumbUrl, fileId: fileId } };
 }
 
 // ── Vector Embeddings ─────────────────────────────────────────────────────────
@@ -474,7 +549,7 @@ function generateArtworkVector(artwork) {
   const headers = data[0];
   const idIdx   = headers.indexOf('id');
   const embIdx  = headers.indexOf('embedding');
-  if (embIdx === -1) return; // Column not added to sheet yet
+  if (embIdx === -1) return;
 
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][idIdx]) === String(artwork.id)) {
@@ -488,29 +563,16 @@ function searchArtworksByVector(queryText) {
   console.log('[searchArtworksByVector] queryText: ' + queryText);
   Logger.log('[searchArtworksByVector] queryText: ' + queryText);
 
-  // Reads raw sheet data so the embedding column is ALWAYS present
   var sheetData = getSheet(SHEET_ARTWORKS).getDataRange().getValues();
   var headers   = sheetData[0];
   var embIdx    = headers.indexOf('embedding');
-  console.log('[searchArtworksByVector] headers: ' + JSON.stringify(headers));
-  console.log('[searchArtworksByVector] embIdx: ' + embIdx + '  total rows (incl header): ' + sheetData.length);
-  Logger.log('[searchArtworksByVector] headers: ' + JSON.stringify(headers));
-  Logger.log('[searchArtworksByVector] embIdx: ' + embIdx + '  total rows (incl header): ' + sheetData.length);
 
-  // Build artwork list — plain indexed loop (no destructuring, no for…of)
   var allArtworks = [];
   for (var r = 1; r < sheetData.length; r++) {
     if (sheetData[r][0]) allArtworks.push(rowToObject(headers, sheetData[r]));
   }
-  console.log('[searchArtworksByVector] allArtworks loaded: ' + allArtworks.length);
-  Logger.log('[searchArtworksByVector] allArtworks loaded: ' + allArtworks.length);
 
-  // Count how many have a non-empty embedding
-  var withEmb = allArtworks.filter(function(a){ return !!a.embedding; }).length;
-  console.log('[searchArtworksByVector] artworks WITH embedding: ' + withEmb + ' / ' + allArtworks.length);
-  Logger.log('[searchArtworksByVector] artworks WITH embedding: ' + withEmb + ' / ' + allArtworks.length);
-
-  // Step 1: Text match — check if query CONTAINS a known title or artist name
+  // Step 1: exact text match against title or artist
   var qLower      = queryText.toLowerCase();
   var textMatches = [];
   for (var t = 0; t < allArtworks.length; t++) {
@@ -522,48 +584,29 @@ function searchArtworksByVector(queryText) {
       textMatches.push(at);
     }
   }
-  console.log('[searchArtworksByVector] text-match hits: ' + textMatches.length + (textMatches.length > 0 ? ' → ' + textMatches.map(function(a){ return a.title; }).join(', ') : ''));
-  Logger.log('[searchArtworksByVector] text-match hits: ' + textMatches.length + (textMatches.length > 0 ? ' → ' + textMatches.map(function(a){ return a.title; }).join(', ') : ''));
   if (textMatches.length > 0) {
+    console.log('[searchArtworksByVector] text-match hits: ' + textMatches.map(function(a){ return a.title; }).join(', '));
+    Logger.log('[searchArtworksByVector] text-match hits: ' + textMatches.map(function(a){ return a.title; }).join(', '));
     return textMatches.slice(0, 3).map(stripEmbedding);
   }
 
-  // Step 2: Vector similarity fallback
-  if (embIdx === -1) {
-    console.log('[searchArtworksByVector] embedding column NOT FOUND — aborting vector search');
-    Logger.log('[searchArtworksByVector] embedding column NOT FOUND — aborting vector search');
-    return [];
-  }
+  // Step 2: vector similarity fallback
+  if (embIdx === -1) return [];
 
   var queryVec = getGeminiEmbedding(queryText);
-  console.log('[searchArtworksByVector] queryVec obtained: ' + (Array.isArray(queryVec) ? 'YES, length=' + queryVec.length : 'NULL/INVALID'));
-  Logger.log('[searchArtworksByVector] queryVec obtained: ' + (Array.isArray(queryVec) ? 'YES, length=' + queryVec.length : 'NULL/INVALID'));
   if (!Array.isArray(queryVec)) return [];
 
-  var THRESHOLD = 0.55; // Slightly relaxed from 0.6 to catch near-misses
+  var THRESHOLD = 0.55;
   var scored    = [];
-
   for (var v = 0; v < allArtworks.length; v++) {
     var av = allArtworks[v];
     if (!av.embedding) continue;
     var storedVector;
-    try {
-      storedVector = JSON.parse(String(av.embedding));
-    } catch (e) {
-      console.log('[searchArtworksByVector] JSON.parse FAILED for artwork: ' + av.title);
-      Logger.log('[searchArtworksByVector] JSON.parse FAILED for artwork: ' + av.title);
-      continue;
-    }
+    try { storedVector = JSON.parse(String(av.embedding)); } catch (e) { continue; }
     if (!Array.isArray(storedVector)) continue;
     var score = cosineSimilarity(queryVec, storedVector);
-    console.log('[searchArtworksByVector] score=' + score.toFixed(4) + '  title=' + av.title + (score >= THRESHOLD ? '  ✓ ABOVE THRESHOLD' : ''));
-    Logger.log('[searchArtworksByVector] score=' + score.toFixed(4) + '  title=' + av.title + (score >= THRESHOLD ? '  ABOVE THRESHOLD' : ''));
     if (score >= THRESHOLD) scored.push({ artwork: av, score: score });
   }
-
-  console.log('[searchArtworksByVector] scored above threshold ' + THRESHOLD + ': ' + scored.length);
-  Logger.log('[searchArtworksByVector] scored above threshold ' + THRESHOLD + ': ' + scored.length);
-
   scored.sort(function(x, y) { return y.score - x.score; });
   return scored.slice(0, 3).map(function(s) { return stripEmbedding(s.artwork); });
 }
@@ -572,6 +615,99 @@ function stripEmbedding(artwork) {
   const copy = Object.assign({}, artwork);
   delete copy.embedding;
   return copy;
+}
+
+// ── Inventory Context Builder ─────────────────────────────────────────────────
+
+/**
+ * Builds a full, authoritative inventory snapshot by reading Artworks + Editions.
+ * Used by handleSearchIntent so Gemini always has exact edition numbers and
+ * locations — never relies on vector embeddings for quantity counts.
+ */
+function getInventoryContext() {
+  const artSheet   = getSheet(SHEET_ARTWORKS);
+  const artData    = artSheet.getDataRange().getValues();
+  const artHeaders = artData[0];
+  const idIdx     = artHeaders.indexOf('id');
+  const titleIdx  = artHeaders.indexOf('title');
+  const artistIdx = artHeaders.indexOf('artist');
+  const catIdx    = artHeaders.indexOf('category');
+  const qtyIdx    = artHeaders.indexOf('qty');
+  const locIdx    = artHeaders.indexOf('location');
+
+  // Read all editions in one shot
+  var edMap = {}; // artworkId → { home: [edNums], outside: {loc: [edNums]}, sold: count }
+  try {
+    const edSheet   = getSheet('Editions');
+    const edData    = edSheet.getDataRange().getValues();
+    const edHeaders = edData[0];
+    const eArtIdIdx  = edHeaders.indexOf('artworkId');
+    const eNumIdx    = edHeaders.indexOf('edition_number');
+    const eLocCatIdx = edHeaders.indexOf('location_category');
+    const eLocDetIdx = edHeaders.indexOf('location_detail');
+    const eIsSoldIdx = edHeaders.indexOf('is_sold');
+
+    for (var r = 1; r < edData.length; r++) {
+      if (!edData[r][0]) continue;
+      const aId = String(edData[r][eArtIdIdx]).trim();
+      if (!edMap[aId]) edMap[aId] = { home: [], outside: {}, sold: 0 };
+
+      const rawSold = edData[r][eIsSoldIdx];
+      const isSold  = rawSold === true || String(rawSold).toUpperCase() === 'TRUE';
+      const edNum   = '#' + String(edData[r][eNumIdx]).trim();
+
+      if (isSold) {
+        edMap[aId].sold++;
+      } else {
+        const lCat = String(edData[r][eLocCatIdx] || '').trim();
+        const lDet = String(edData[r][eLocDetIdx] || '').trim();
+        const isHome = !lCat || lCat === '家裡' || lCat === '自家';
+        if (isHome) {
+          edMap[aId].home.push(edNum);
+        } else {
+          const locKey = lDet || lCat;
+          if (!edMap[aId].outside[locKey]) edMap[aId].outside[locKey] = [];
+          edMap[aId].outside[locKey].push(edNum);
+        }
+      }
+    }
+  } catch (edErr) {
+    console.log('[getInventoryContext] Editions read error: ' + edErr.message);
+    Logger.log('[getInventoryContext] Editions read error: ' + edErr.message);
+    // Continue — non-print artworks don't need editions
+  }
+
+  const lines = ['===== 完整庫存快照 ====='];
+  for (let i = 1; i < artData.length; i++) {
+    if (!artData[i][0]) continue;
+    const artId  = String(artData[i][idIdx]).trim();
+    const title  = String(artData[i][titleIdx] || '');
+    const artist = String(artData[i][artistIdx] || '');
+    const cat    = String(artData[i][catIdx]    || '未分類');
+    const qty    = Number(artData[i][qtyIdx])   || 0;
+    const loc    = String(artData[i][locIdx]    || '');
+    const isPrint = cat.indexOf('版') !== -1;
+
+    let line = '‣ ' + title + '（' + artist + '）[' + cat + ']';
+
+    if (isPrint && edMap[artId]) {
+      const ed   = edMap[artId];
+      const parts = [];
+      if (ed.home.length > 0) parts.push('在家：' + ed.home.join(', '));
+      const outKeys = Object.keys(ed.outside);
+      for (let k = 0; k < outKeys.length; k++) {
+        parts.push(outKeys[k] + '：' + ed.outside[outKeys[k]].join(', '));
+      }
+      if (ed.sold > 0) parts.push('已售出 ' + ed.sold + ' 件');
+      line += '  →  ' + (parts.length > 0 ? parts.join('；') : '無可用版次');
+    } else {
+      line += '  →  庫存：' + qty + ' 件' + (loc ? '，地點：' + loc : '');
+    }
+
+    lines.push(line);
+  }
+  lines.push('========================');
+  return lines.join('\n');
 }
 
 // ── AI Command Router ─────────────────────────────────────────────────────────
@@ -588,13 +724,10 @@ function processAiCommand(body) {
   Logger.log('[processAiCommand] API KEY present: ' + !!apiKey);
 
   if (!apiKey) {
-    console.log('[processAiCommand] No API key — using fallback');
-    Logger.log('[processAiCommand] No API key — using fallback');
     const { data: artworks } = getArtworks();
     return fallbackAiCommand(command, artworks, userId, userName);
   }
 
-  // Classify intent: SEARCH vs TRANSACTION
   const classifyPrompt =
     `Classify the following user command as either SEARCH or TRANSACTION.\n` +
     `SEARCH: user is asking a question, looking up inventory status, or requesting information.\n` +
@@ -604,16 +737,12 @@ function processAiCommand(body) {
 
   const rawIntent = geminiFlash(classifyPrompt, apiKey);
   const intent    = rawIntent.toUpperCase();
-  console.log('[processAiCommand] RAW INTENT FROM GEMINI: "' + rawIntent + '"  →  normalised: "' + intent + '"');
-  Logger.log('[processAiCommand] RAW INTENT FROM GEMINI: "' + rawIntent + '"  →  normalised: "' + intent + '"');
+  console.log('[processAiCommand] intent: "' + intent + '"');
+  Logger.log('[processAiCommand] intent: "' + intent + '"');
 
   if (intent.startsWith('TRANSACTION')) {
-    console.log('[processAiCommand] → routing to handleTransactionIntent');
-    Logger.log('[processAiCommand] → routing to handleTransactionIntent');
     return handleTransactionIntent(command, userId, userName, apiKey);
   }
-  console.log('[processAiCommand] → routing to handleSearchIntent');
-  Logger.log('[processAiCommand] → routing to handleSearchIntent');
   return handleSearchIntent(command, apiKey);
 }
 
@@ -621,12 +750,11 @@ function handleTransactionIntent(command, userId, userName, apiKey) {
   console.log('[handleTransactionIntent] command: ' + command);
   Logger.log('[handleTransactionIntent] command: ' + command);
 
-  // Ask Gemini only to extract intent — no need to supply inventory or IDs
   const extractPrompt =
     `You are an inventory assistant for an art gallery.\n` +
     `User command: "${command}"\n\n` +
-    `Extract the transaction and return ONLY valid JSON (no markdown):\n` +
-    `{"artworkTitle":"<artwork name mentioned by user>","action":"check-in"|"check-out","qty":<number>,"reason":"<brief reason>"}`;
+    `Extract the transaction and return ONLY valid JSON (no markdown, no extra text):\n` +
+    `{"artworkTitle":"<artwork name>","action":"check-in"|"check-out","qty":<number>,"outSubtype":"transfer"|"sold"|null,"reason":"<brief reason>"}`;
 
   const text = geminiFlash(extractPrompt, apiKey);
   console.log('[handleTransactionIntent] Gemini raw extract: ' + text);
@@ -636,87 +764,103 @@ function handleTransactionIntent(command, userId, userName, apiKey) {
   try {
     parsed = JSON.parse(text.replace(/```json\n?|\n?```/g, '').trim());
   } catch (_) {
-    console.log('[handleTransactionIntent] JSON parse FAILED');
-    Logger.log('[handleTransactionIntent] JSON parse FAILED');
     return { success: false, error: 'AI 無法解析指令。', data: { message: text } };
   }
 
-  console.log('[handleTransactionIntent] parsed.artworkTitle: ' + parsed.artworkTitle + '  action: ' + parsed.action + '  qty: ' + parsed.qty);
-  Logger.log('[handleTransactionIntent] parsed.artworkTitle: ' + parsed.artworkTitle + '  action: ' + parsed.action + '  qty: ' + parsed.qty);
-
   if (!parsed.artworkTitle) {
-    console.log('[handleTransactionIntent] No artworkTitle in parsed JSON — aborting');
-    Logger.log('[handleTransactionIntent] No artworkTitle in parsed JSON — aborting');
-    return { success: false, error: '找不到匹配的作品。', data: { message: '請確認作品名稱是否正確。' } };
+    return { success: false, error: '找不到作品名稱。', data: { message: '請確認作品名稱是否正確。' } };
   }
 
-  // Use vector search to fuzzy-match the extracted title against the real inventory
   const matches = searchArtworksByVector(parsed.artworkTitle);
-  console.log('[handleTransactionIntent] searchArtworksByVector returned ' + matches.length + ' match(es): ' + matches.map(function(m){ return m.title; }).join(', '));
-  Logger.log('[handleTransactionIntent] searchArtworksByVector returned ' + matches.length + ' match(es): ' + matches.map(function(m){ return m.title; }).join(', '));
-
   if (matches.length === 0) {
-    return { success: false, error: '找不到匹配的作品。', data: { message: `找不到與「${parsed.artworkTitle}」相關的作品，請確認名稱。` } };
+    return { success: false, error: '找不到匹配的作品。', data: { message: '找不到與「' + parsed.artworkTitle + '」相關的作品，請確認名稱。' } };
   }
 
-  const artwork = matches[0]; // Top cosine-similarity result
-  const txBody = {
-    artworkId: artwork.id,
-    qty: Number(parsed.qty) || 1,
+  const artwork = matches[0];
+  const prepared = {
+    artworkId:  String(artwork.id),
+    title:      String(artwork.title),
+    artist:     String(artwork.artist),
+    category:   String(artwork.category || ''),
+    currentQty: Number(artwork.qty) || 0,
+    action:     parsed.action === 'check-in' ? 'check-in' : 'check-out',
+    qty:        Number(parsed.qty) || 1,
+    outSubtype: parsed.outSubtype || null,
     userId,
     userName,
-    notes: 'AI: ' + command,
+    notes:      'AI: ' + command,
   };
-  const txResult = processTransaction(txBody, parsed.action === 'check-in' ? 'check-in' : 'check-out');
 
-  const confirmPrompt = `用繁體中文一句話確認以下庫存操作已完成：${txResult.message}`;
-  const confirmMsg = geminiFlash(confirmPrompt, apiKey);
-  console.log('[handleTransactionIntent] Final confirm reply: ' + confirmMsg);
-  Logger.log('[handleTransactionIntent] Final confirm reply: ' + confirmMsg);
-  return { success: true, data: { message: confirmMsg || txResult.message } };
+  console.log('[handleTransactionIntent] PREPARE_TRANSACTION: ' + JSON.stringify(prepared));
+  Logger.log('[handleTransactionIntent] PREPARE_TRANSACTION: ' + JSON.stringify(prepared));
+
+  return { success: true, intent: 'PREPARE_TRANSACTION', data: prepared };
 }
 
+function executeConfirmedTransaction(body) {
+  const { artworkId, txAction, qty, outSubtype, destination, buyerName, soldPrice, userId, userName, notes } = body;
+  if (!artworkId || !txAction) throw new Error('artworkId and txAction are required');
+
+  const txBody = {
+    artworkId:   String(artworkId),
+    qty:         Number(qty) || 1,
+    userId:      userId || '',
+    userName:    userName || '',
+    notes:       notes || '',
+    outSubtype:  outSubtype  || undefined,
+    destination: destination || undefined,
+    buyerName:   buyerName   || undefined,
+    soldPrice:   soldPrice   ? Number(soldPrice) : undefined,
+  };
+
+  const result = processTransaction(txBody, txAction === 'check-in' ? 'check-in' : 'check-out');
+  return { success: true, data: { message: result.message } };
+}
+
+/**
+ * Answers inventory questions using a full inventory snapshot injected directly
+ * into the Gemini prompt. Quantity counts come from Editions rows, not embeddings.
+ */
 function handleSearchIntent(command, apiKey) {
   console.log('[handleSearchIntent] command: ' + command);
   Logger.log('[handleSearchIntent] command: ' + command);
 
-  const topMatches = searchArtworksByVector(command);
-
-  console.log('[handleSearchIntent] topMatches count: ' + topMatches.length);
-  Logger.log('[handleSearchIntent] topMatches count: ' + topMatches.length);
-  if (topMatches.length > 0) {
-    var titles = topMatches.map(function(a){ return a.title; }).join(', ');
-    console.log('[handleSearchIntent] matched titles: ' + titles);
-    Logger.log('[handleSearchIntent] matched titles: ' + titles);
+  // Build authoritative inventory snapshot
+  var inventoryContext = '';
+  try {
+    inventoryContext = getInventoryContext();
+  } catch (ctxErr) {
+    console.log('[handleSearchIntent] getInventoryContext error: ' + ctxErr.message);
+    Logger.log('[handleSearchIntent] getInventoryContext error: ' + ctxErr.message);
   }
 
-  if (topMatches.length === 0) {
-    console.log('[handleSearchIntent] NO MATCHES — returning 找不到 message');
-    Logger.log('[handleSearchIntent] NO MATCHES — returning 找不到 message');
-    return { success: true, data: { message: '抱歉，我在庫存中找不到相關的作品，請確認作品名稱或條件。' } };
+  console.log('[handleSearchIntent] inventoryContext length: ' + inventoryContext.length);
+  Logger.log('[handleSearchIntent] inventoryContext:\n' + inventoryContext);
+
+  if (!inventoryContext || inventoryContext.split('\n').length <= 2) {
+    return { success: true, data: { message: '庫存目前為空，尚無作品資料。' } };
   }
 
-  const matchContext = topMatches.map(a =>
-    `《${a.title}》作者：${a.artist}，類別：${a.category || '未分類'}，` +
-    `庫存：${a.qty} 件，狀態：${a.status === 'in-stock' ? '有庫存' : '已售罄'}，` +
-    `地點：${a.location || '未指定'}，備註：${a.notes || '無'}`
-  ).join('\n');
+  var responsePrompt =
+    '你是一個專業、精準、冷靜的畫廊倉管員，正在向內部同事回報庫存狀態。\n' +
+    '禁止使用「歡迎隨時告訴我」、「如果您有興趣」等推銷語氣，回答要如實、直接。\n\n' +
+    '回答規則（依問題意圖擇一）：\n' +
+    '  1. 問「家裡有幾件」→ 只報在家（在家：#號）的版次數量。\n' +
+    '  2. 問「還剩幾件 / 可賣幾件」→ 報在家＋在外合計，並列明在外地點。\n' +
+    '  3. 若已售出 > 0 → 客觀陳述「已售出 X 件」。\n' +
+    '  4. 必須根據以下庫存快照中的資料回答，不得自行推測。若找不到相關作品，如實說明。\n\n' +
+    inventoryContext + '\n\n' +
+    '同事詢問：「' + command + '」\n\n' +
+    '請用繁體中文，2-4 句話精確回答，不要冗餘說明。';
 
-  const responsePrompt =
-    `你是一個友善的藝廊助理。用戶詢問：「${command}」\n\n` +
-    `根據以下庫存資料，用自然、簡短的繁體中文回答（2-3句即可）：\n${matchContext}`;
-
-  const reply = geminiFlash(responsePrompt, apiKey);
+  var reply = geminiFlash(responsePrompt, apiKey);
   console.log('[handleSearchIntent] FINAL GEMINI REPLY: ' + reply);
   Logger.log('[handleSearchIntent] FINAL GEMINI REPLY: ' + reply);
+
   if (!reply) {
-    const debugMsg = 'DEBUG_EMPTY_REPLY: Gemini returned no text. ' +
-      topMatches.length + ' match(es) found: ' +
-      topMatches.map(function(a) { return a.title; }).join(', ');
-    console.log('[handleSearchIntent] ' + debugMsg);
-    Logger.log('[handleSearchIntent] ' + debugMsg);
-    return { success: true, data: { message: debugMsg } };
+    return { success: true, data: { message: '無法取得回應，請稍後再試。' } };
   }
+
   return { success: true, data: { message: reply } };
 }
 
@@ -776,8 +920,10 @@ function getSheet(name) {
 }
 
 function rowToObject(headers, row) {
+  const STRING_FIELDS = new Set(['id', 'title', 'artist']);
   return headers.reduce((obj, key, i) => {
-    obj[key] = row[i] ?? '';
+    const val = row[i] ?? '';
+    obj[key] = STRING_FIELDS.has(key) ? String(val) : val;
     return obj;
   }, {});
 }
@@ -795,17 +941,20 @@ function createNewArtwork(payload) {
     const initialQty = isPrint ? (edTotal + apTotal) : (parseInt(payload.qty) || 1);
     const price   = parseInt(payload.price) || 0;
 
+    // Columns: id | title | artist | category | status | qty | edition_total | ap_count | price | location | imageUrl | notes
     artSheet.appendRow([
       newId,
-      payload.title,
-      payload.artist,
-      payload.category,
+      payload.title       || '',
+      payload.artist      || '',
+      payload.category    || '',
       'in-stock',
-      initialQty,                // F: qty
-      isPrint ? edTotal : '',    // G: edition_total
-      isPrint ? apTotal : '',    // H: ap_count
-      price,                     // I: price
-      payload.location || '自家',
+      initialQty,
+      isPrint ? edTotal : '',
+      isPrint ? apTotal : '',
+      price,
+      payload.location    || '自家',
+      payload.imageUrl    || '',
+      payload.notes       || '',
     ]);
 
     if (isPrint && initialQty > 0) {
@@ -822,6 +971,10 @@ function createNewArtwork(payload) {
     }
 
     SpreadsheetApp.flush();
+
+    // Atomic sync: recount editions and overwrite qty (guards against non-prints)
+    if (isPrint) _syncArtworkQty(newId);
+
     return { success: true, data: { id: newId } };
   } catch (e) {
     return { success: false, error: e.toString() };

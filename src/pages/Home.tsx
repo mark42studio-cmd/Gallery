@@ -118,7 +118,7 @@ export default function Home({ user, isMock }: Props) {
 
         {/* Loading skeleton */}
         {isLoading && artworks.length === 0 && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="border border-smoke rounded-sm overflow-hidden animate-pulse">
                 <div className="aspect-square bg-mist" />
@@ -144,7 +144,7 @@ export default function Home({ user, isMock }: Props) {
 
         {/* Grid */}
         {artworks.length > 0 && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {artworks.map((artwork) => (
               <ArtworkCard
                 key={artwork.id}
