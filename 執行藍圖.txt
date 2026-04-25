@@ -1,0 +1,45 @@
+執行藍圖
+1
+準備資料庫 (模擬客戶端)
+預計時間：3 分鐘
+開啟一個新的 Google 試算表，建立兩個分頁：命名為 Artworks 與 Logs。
+
+點選 擴充功能  Apps Script，把上一篇我給你的 doGet 與 doPost 程式碼貼上。
+
+點選右上角 部署  新增部署作業。
+
+類型選「網頁應用程式」，存取權限設為 「所有人 (Anyone)」。
+
+把最後產生的網址 (Web App URL) 複製下來，先存在記事本。
+
+2
+召喚 Claude Code 寫前端
+預計時間：5-10 分鐘
+打開你的終端機 (Terminal)，切換到你準備放專案的資料夾，然後直接輸入 claude 喚醒它。
+
+把你剛才決定好的「完整版 Prompt」（包含畫廊美學、LIFF 串接、以及最重要的動態綁定 Settings 頁面）直接貼給 Claude Code。
+
+讓它自己跑 npx create-next-app、安裝 shadcnui 並生成所有頁面。
+
+3
+取得 LINE LIFF ID
+預計時間：5 分鐘
+在 Claude 寫 Code 的同時，你需要去拿鑰匙：
+
+登入 LINE Developers Console。
+
+建立一個 Provider，然後建立一個 LINE Login 頻道。
+
+在該頻道內點擊 LIFF 頁籤，新增一個 LIFF App。
+
+Size 選 Full，Endpoint URL 先隨便填個 httplocalhost3000（之後再改）。
+
+把產生的 LIFF ID 複製下來。
+
+4
+環境變數設定與本地測試
+預計時間：3 分鐘
+Claude 寫完後，進到專案目錄，建立一個 .env.local 檔案。
+把剛剛的 LIFF ID 放進去：NEXT_PUBLIC_LIFF_ID=你的LIFF_ID。
+
+輸入 npm run dev 啟動本地伺服器。進入畫面後，點選 Settings 頁面，貼上你在第一步拿到的 GAS 網址。

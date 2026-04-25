@@ -1,0 +1,19 @@
+How to run
+
+  cd "E:\9.畫廊倉儲管理機器人"
+  npm install
+  npm run dev          # http://localhost:3000  (mock LIFF mode)
+
+  LIFF wiring (production)
+
+  1. Copy .env.example → .env.local, set VITE_LIFF_ID=<your id>
+  2. Run npm run build and deploy dist/ to a public HTTPS host
+  3. Register the URL as the LIFF endpoint in LINE Developers Console
+
+  GAS / Google Sheets
+
+  1. Create a Spreadsheet with Artworks and Transactions sheets (columns in Settings page)
+  2. Paste gas/Code.gs into Apps Script, deploy as Web App (Anyone access)
+  3. Optional AI: add script property GEMINI_API_KEY for natural language parsing via Gemini 2.0 Flash; without it, a
+  regex-based keyword fallback runs automatically
+  4. Paste the deployment URL into the app's Settings page
