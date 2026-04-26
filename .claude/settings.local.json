@@ -6,7 +6,8 @@
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:d[k] for k in ['scripts','dependencies','devDependencies'] if k in d}, indent=2, ensure_ascii=False\\)\\)\")",
       "Bash(npx vercel *)",
       "Bash(ls .vercel)",
-      "Bash(cat .vercel/project.json)"
+      "Bash(cat .vercel/project.json)",
+      "Bash(grep -E \"\\\\.tsx$\")"
     ]
   }
 }

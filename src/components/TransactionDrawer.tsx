@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Drawer } from 'vaul';
 import {
   X, ArrowDownCircle, ArrowUpCircle, Building2, Tag,
@@ -433,10 +434,16 @@ export default function TransactionDrawer({
                           </p>
                         ) : (
                           <div className="divide-y divide-smoke/60 max-h-36 overflow-y-auto">
-                            {queryEditions.map((ed) => {
+                            {queryEditions.map((ed, i) => {
                               const isSold = ed.is_sold === true || String(ed.is_sold).toUpperCase() === 'TRUE';
                               return (
-                                <div key={String(ed.edition_number)} className="flex items-center justify-between px-3 py-1.5">
+                                <motion.div
+                                  key={String(ed.edition_number)}
+                                  initial={{ opacity: 0, y: 8 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ duration: 0.25, delay: Math.min(i * 0.04, 0.4) }}
+                                  className="flex items-center justify-between px-3 py-1.5"
+                                >
                                   <span className="text-xs font-medium text-ink">#{ed.edition_number}</span>
                                   {isSold ? (
                                     <span className="text-[10px] text-ash">已售出</span>
@@ -445,7 +452,7 @@ export default function TransactionDrawer({
                                       {ed.location_category}{ed.location_detail ? `・${ed.location_detail}` : ''}
                                     </span>
                                   )}
-                                </div>
+                                </motion.div>
                               );
                             })}
                           </div>
@@ -617,14 +624,17 @@ export default function TransactionDrawer({
                 ) : (
                   <>
                     <div className="flex flex-wrap gap-2">
-                      {availableEditions.map((e) => {
+                      {availableEditions.map((e, i) => {
                         const active   = selectedNums.includes(e.edition_number);
                         const locLabel = e.location_detail
                           ? `${e.location_category}・${e.location_detail}`
                           : e.location_category;
                         return (
-                          <button
+                          <motion.button
                             key={String(e.edition_number)}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.5) }}
                             onClick={() => toggleEdition(e.edition_number)}
                             className={`flex flex-col items-center px-3 py-2 rounded-sm border text-xs transition-colors ${
                               active
@@ -636,7 +646,7 @@ export default function TransactionDrawer({
                             <span className={`text-[10px] mt-0.5 ${active ? 'text-paper/70' : 'text-ash'}`}>
                               {locLabel}
                             </span>
-                          </button>
+                          </motion.button>
                         );
                       })}
                     </div>

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Search, SlidersHorizontal, DollarSign, PencilLine, Plus } from 'lucide-react';
 import type { Artwork, LiffUser } from '../types';
@@ -16,7 +17,7 @@ interface Props {
   isMock: boolean;
 }
 
-type Filter = 'all' | 'in-stock' | 'out';
+type Filter = 'all' | 'in-stock' | 'out' | 'sold';
 
 export default function Inventory({ user, isMock }: Props) {
   const navigate = useNavigate();
@@ -48,7 +49,11 @@ export default function Inventory({ user, isMock }: Props) {
         a.artist.toLowerCase().includes(q) ||
         (a.location ?? '').toLowerCase().includes(q) ||
         (a.category ?? '').toLowerCase().includes(q);
-      const matchesFilter = filter === 'all' || a.status === filter;
+      const matchesFilter =
+        filter === 'all' ||
+        (filter === 'in-stock' && a.qty > 0) ||
+        (filter === 'out'      && a.qty === 0 && a.status === 'out') ||
+        (filter === 'sold'     && a.status === 'sold');
       return matchesQuery && matchesFilter;
     });
   }, [artworks, query, filter]);
@@ -80,7 +85,7 @@ export default function Inventory({ user, isMock }: Props) {
 
         <div className="flex gap-2 items-center">
           <SlidersHorizontal size={12} className="text-ash shrink-0" />
-          {(['all', 'in-stock', 'out'] as Filter[]).map((f) => (
+          {(['all', 'in-stock', 'out', 'sold'] as Filter[]).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -90,7 +95,7 @@ export default function Inventory({ user, isMock }: Props) {
                   : 'bg-paper text-ash border-smoke hover:border-charcoal'
               }`}
             >
-              {f === 'all' ? '全部' : f === 'in-stock' ? '在庫' : '已出庫'}
+              {f === 'all' ? '全部' : f === 'in-stock' ? '在庫' : f === 'out' ? '已出庫' : '已售出'}
             </button>
           ))}
           <span className="ml-auto text-[10px] text-ash tabular-nums">{filtered.length}</span>
@@ -134,8 +139,14 @@ export default function Inventory({ user, isMock }: Props) {
         )}
 
         <div className="divide-y divide-smoke">
-          {filtered.map((artwork) => (
-            <div key={artwork.id} className="flex items-center hover:bg-mist transition-colors">
+          {filtered.map((artwork, i) => (
+            <motion.div
+              key={artwork.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: Math.min(i * 0.05, 0.6) }}
+              className="flex items-center hover:bg-mist transition-colors"
+            >
               {/* Main click area → transaction drawer */}
               <button
                 onClick={() => { setSelectedArtwork(artwork); setDrawerOpen(true); }}
@@ -203,7 +214,7 @@ export default function Inventory({ user, isMock }: Props) {
                   <PencilLine size={13} />
                 </button>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       </main>

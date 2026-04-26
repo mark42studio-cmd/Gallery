@@ -423,16 +423,23 @@ function _syncArtworkQty(artworkId) {
   const edHeaders = edData[0];
   const edArtIdIdx  = edHeaders.indexOf('artworkId');
   const edIsSoldIdx = edHeaders.indexOf('is_sold');
+  const edLocCatIdx = edHeaders.indexOf('location_category');
 
   let editionRows = 0;
-  let inStock = 0;
+  let homeCount   = 0;
+  let soldCount   = 0;
   for (let r = 1; r < edData.length; r++) {
     if (!edData[r][0]) continue;
     if (String(edData[r][edArtIdIdx]).trim() !== String(artworkId).trim()) continue;
     editionRows++;
     const rawSold = edData[r][edIsSoldIdx];
     const isSold  = rawSold === true || String(rawSold).toUpperCase() === 'TRUE';
-    if (!isSold) inStock++;
+    if (isSold) {
+      soldCount++;
+    } else {
+      const locCat = String(edData[r][edLocCatIdx] || '').trim();
+      if (!locCat || locCat === '家裡' || locCat === '自家') homeCount++;
+    }
   }
 
   // Non-print artworks have no edition rows — leave their qty alone
@@ -447,8 +454,9 @@ function _syncArtworkQty(artworkId) {
 
   for (let s = 1; s < artData.length; s++) {
     if (String(artData[s][artIdColIdx]).trim() !== String(artworkId).trim()) continue;
-    artSheet.getRange(s + 1, qtyIdx + 1).setValue(inStock);
-    artSheet.getRange(s + 1, stIdx  + 1).setValue(inStock > 0 ? 'in-stock' : 'out');
+    artSheet.getRange(s + 1, qtyIdx + 1).setValue(homeCount);
+    const newStatus = homeCount > 0 ? 'in-stock' : (soldCount === editionRows ? 'sold' : 'out');
+    artSheet.getRange(s + 1, stIdx  + 1).setValue(newStatus);
     break;
   }
 }
@@ -960,13 +968,13 @@ function createNewArtwork(payload) {
     if (isPrint && initialQty > 0) {
       const editionsData = [];
       for (let i = 1; i <= edTotal; i++) {
-        editionsData.push([newId, i, '家裡', '', false, price, false, '']);
+        editionsData.push([newId, i, '家裡', '', false, price, false, '', payload.title || '']);
       }
       for (let i = 1; i <= apTotal; i++) {
-        editionsData.push([newId, 'AP' + i, '家裡', '', false, price, false, '']);
+        editionsData.push([newId, 'AP' + i, '家裡', '', false, price, false, '', payload.title || '']);
       }
       if (editionsData.length > 0) {
-        edSheet.getRange(edSheet.getLastRow() + 1, 1, editionsData.length, 8).setValues(editionsData);
+        edSheet.getRange(edSheet.getLastRow() + 1, 1, editionsData.length, 9).setValues(editionsData);
       }
     }
 

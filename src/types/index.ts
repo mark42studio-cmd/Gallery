@@ -19,7 +19,7 @@ export interface Artwork {
   artist: string;
   category?: ArtworkCategory | '';
   // Legacy aggregate fields (kept for backward compat with existing UI)
-  status: 'in-stock' | 'out';
+  status: 'in-stock' | 'out' | 'sold';
   qty: number;
   edition_total?: number | '';
   ap_count?: number | '';
