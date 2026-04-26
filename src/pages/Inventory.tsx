@@ -111,7 +111,7 @@ export default function Inventory({ user, isMock }: Props) {
         </div>
       </div>
 
-      <main className="flex-1 pb-20 scroll-smooth-ios">
+      <main className="flex-1 pb-24 md:pb-8 scroll-smooth-ios">
         {isLoading && artworks.length === 0 && (
           <div className="divide-y divide-smoke">
             {Array.from({ length: 8 }).map((_, i) => (

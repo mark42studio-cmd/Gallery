@@ -63,9 +63,9 @@ export default function Home({ user, isMock }: Props) {
     <div className="flex flex-col min-h-screen bg-paper">
       <Header user={user} isMock={isMock} title="Gallery" />
 
-      <main className="flex-1 px-4 py-5 pb-28 scroll-smooth-ios">
+      <main className="flex-1 px-4 py-5 pb-24 md:pb-8 scroll-smooth-ios">
         {/* Summary stats */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div id="tour-stats" className="grid grid-cols-3 gap-3 mb-6">
           {[
             { label: '總計',   value: artworks.length },
             { label: '在庫',   value: inStock },
@@ -90,6 +90,7 @@ export default function Home({ user, isMock }: Props) {
               <BarChart2 size={14} />
             </button>
             <button
+              id="tour-add-artwork"
               onClick={handleAddNew}
               className="p-1.5 text-ash hover:text-ink transition-colors"
               aria-label="Add artwork"
@@ -118,7 +119,7 @@ export default function Home({ user, isMock }: Props) {
 
         {/* Loading skeleton */}
         {isLoading && artworks.length === 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="border border-smoke rounded-sm overflow-hidden animate-pulse">
                 <div className="aspect-square bg-mist" />
@@ -144,7 +145,7 @@ export default function Home({ user, isMock }: Props) {
 
         {/* Grid */}
         {artworks.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {artworks.map((artwork) => (
               <ArtworkCard
                 key={artwork.id}

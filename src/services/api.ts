@@ -170,6 +170,14 @@ export const api = {
   bulkUpdatePrices: (artist: string, percentage: number, reason: string, userId: string, userName: string) =>
     gasPost<{ updated: number }>({ action: 'bulkUpdatePrices', artist, percentage, reason, userId, userName }),
 
+  granularUpdatePrices: (
+    updates: Array<{ id: string; newPrice: number }>,
+    reason: string,
+    userId: string,
+    userName: string,
+  ) =>
+    gasPost<{ updated: number }>({ action: 'granularUpdatePrices', updates, reason, userId, userName }),
+
   getEditions: (artworkId: string) =>
     gasGet<Edition[]>({ action: 'getEditions', artworkId }),
 

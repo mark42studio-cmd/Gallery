@@ -48,7 +48,7 @@ export default function Settings({ user, isMock }: Props) {
     <div className="flex flex-col min-h-screen bg-paper">
       <Header user={user} isMock={isMock} title="系統設定" />
 
-      <main className="flex-1 px-4 py-6 pb-28 space-y-8">
+      <main className="flex-1 px-4 py-6 pb-24 md:pb-8 space-y-8">
         {/* Status banner */}
         {!isConfigured && (
           <div className="border border-smoke rounded-sm p-4 bg-mist">

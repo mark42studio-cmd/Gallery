@@ -9,8 +9,8 @@ const LINKS = [
 
 export default function BottomNav() {
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-30 bg-paper border-t border-smoke pb-safe">
-      <div className="flex">
+    <nav className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-30 w-[min(calc(100%-2rem),28rem)]">
+      <div className="flex bg-white/90 backdrop-blur-md border border-smoke rounded-full shadow-lifted overflow-hidden">
         {LINKS.map(({ to, label, Icon }) => (
           <NavLink
             key={to}
@@ -18,16 +18,13 @@ export default function BottomNav() {
             end={to === '/'}
             className={({ isActive }) =>
               `flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors ${
-                isActive ? 'text-ink' : 'text-ash'
+                isActive ? 'text-ink' : 'text-ash hover:text-ink'
               }`
             }
           >
             {({ isActive }) => (
               <>
-                <Icon
-                  size={20}
-                  strokeWidth={isActive ? 2.5 : 1.75}
-                />
+                <Icon size={20} strokeWidth={isActive ? 2.5 : 1.75} />
                 <span className={`text-[10px] tracking-wide ${isActive ? 'font-semibold' : 'font-normal'}`}>
                   {label}
                 </span>

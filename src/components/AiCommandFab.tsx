@@ -231,6 +231,7 @@ export default function AiCommandFab({ user, onSuccess }: Props) {
 
       {/* FAB */}
       <button
+        id="tour-ai-fab"
         onClick={() => setOpen((v) => !v)}
         className={`fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full shadow-lifted flex items-center justify-center transition-all duration-200 ${
           open ? 'bg-charcoal rotate-45' : 'bg-ink hover:bg-charcoal active:scale-95'

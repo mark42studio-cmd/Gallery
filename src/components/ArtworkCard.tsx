@@ -13,7 +13,7 @@ export default function ArtworkCard({ artwork, onClick, onEditClick, onPriceClic
   const hasPrice = Number(artwork.price) > 0;
 
   return (
-    <div className="w-full h-full flex flex-col bg-paper border border-smoke rounded-sm shadow-card overflow-hidden">
+    <div className="w-full h-full flex flex-col bg-paper border border-smoke rounded-sm shadow-card overflow-hidden hover:-translate-y-1 hover:shadow-md transition-all duration-300">
       {/* Main clickable area → transaction drawer */}
       <button
         onClick={() => onClick?.(artwork)}
