@@ -21,7 +21,7 @@ export default function ArtworkCard({ artwork, onClick, onEditClick, onPriceClic
         aria-label={`${artwork.title} by ${artwork.artist}`}
       >
         <div className="aspect-square bg-mist relative overflow-hidden">
-          {artwork.imageUrl && artwork.imageUrl.startsWith('http') ? (
+          {artwork.imageUrl && typeof artwork.imageUrl === 'string' && artwork.imageUrl.startsWith('http') ? (
             <img src={artwork.imageUrl} alt={artwork.title}
               className="w-full h-full object-cover" loading="lazy" />
           ) : (

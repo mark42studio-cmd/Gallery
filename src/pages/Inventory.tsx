@@ -51,9 +51,9 @@ export default function Inventory({ user, isMock }: Props) {
         (a.category ?? '').toLowerCase().includes(q);
       const matchesFilter =
         filter === 'all' ||
-        (filter === 'in-stock' && a.qty > 0) ||
-        (filter === 'out'      && (a.outCount  ?? 0) > 0) ||
-        (filter === 'sold'     && (a.soldCount ?? 0) > 0);
+        (filter === 'in-stock' && (Number(a.qty)       || 0) > 0) ||
+        (filter === 'out'      && (Number(a.outCount)  || 0) > 0) ||
+        (filter === 'sold'     && (Number(a.soldCount) || 0) > 0);
       return matchesQuery && matchesFilter;
     });
   }, [artworks, query, filter]);
@@ -153,7 +153,7 @@ export default function Inventory({ user, isMock }: Props) {
                 className="flex items-center gap-3 flex-1 min-w-0 px-4 py-3 text-left active:bg-smoke transition-colors"
               >
                 <div className="w-10 h-10 rounded-sm bg-mist shrink-0 overflow-hidden">
-                  {artwork.imageUrl ? (
+                  {artwork.imageUrl && typeof artwork.imageUrl === 'string' && artwork.imageUrl.startsWith('http') ? (
                     <img src={artwork.imageUrl} alt={artwork.title}
                       className="w-full h-full object-cover" loading="lazy" />
                   ) : (

@@ -122,9 +122,14 @@ function getArtworks() {
     .map(row => {
       const obj = rowToObject(headers, row);
       delete obj.embedding;
+      // Force numeric types — sheet cells can return strings for numeric columns
+      obj.qty           = Number(obj.qty)           || 0;
+      obj.price         = Number(obj.price)         || 0;
+      obj.edition_total = Number(obj.edition_total) || 0;
+      obj.ap_count      = Number(obj.ap_count)      || 0;
       const counts = edCounts[String(obj.id)] || { outCount: 0, soldCount: 0 };
-      obj.outCount  = counts.outCount;
-      obj.soldCount = counts.soldCount;
+      obj.outCount  = Number(counts.outCount)  || 0;
+      obj.soldCount = Number(counts.soldCount) || 0;
       return obj;
     });
   return { success: true, data: artworks };

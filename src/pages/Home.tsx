@@ -56,9 +56,9 @@ export default function Home({ user, isMock }: Props) {
     setFormOpen(true);
   }
 
-  const totalIn   = artworks.filter((a) => a.qty > 0).length;
-  const totalOut  = artworks.filter((a) => (a.outCount  ?? 0) > 0).length;
-  const totalSold = artworks.filter((a) => (a.soldCount ?? 0) > 0).length;
+  const totalIn   = artworks.reduce((acc, a) => acc + (Number(a.qty)       || 0), 0);
+  const totalOut  = artworks.reduce((acc, a) => acc + (Number(a.outCount)  || 0), 0);
+  const totalSold = artworks.reduce((acc, a) => acc + (Number(a.soldCount) || 0), 0);
 
   return (
     <div className="flex flex-col min-h-screen bg-paper">
@@ -68,7 +68,7 @@ export default function Home({ user, isMock }: Props) {
         {/* Summary stats */}
         <div id="tour-stats" className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
-            { label: '總計',   value: artworks.length },
+            { label: '總計',   value: totalIn + totalOut + totalSold },
             { label: '在庫',   value: totalIn },
             { label: '已出庫', value: totalOut },
             { label: '已售出', value: totalSold },
