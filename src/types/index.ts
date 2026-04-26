@@ -29,6 +29,9 @@ export interface Artwork {
   notes?: string;
   outCount?: number;
   soldCount?: number;
+  qty_home?: number;
+  qty_out?: number;
+  qty_sold?: number;
   // New edition-aware fields
   creation_year?: number;
   paper_size?: string;

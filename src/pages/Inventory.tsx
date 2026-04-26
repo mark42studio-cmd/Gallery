@@ -51,9 +51,9 @@ export default function Inventory({ user, isMock }: Props) {
         (a.category ?? '').toLowerCase().includes(q);
       const matchesFilter =
         filter === 'all' ||
-        (filter === 'in-stock' && (Number(a.qty)       || 0) > 0) ||
-        (filter === 'out'      && (Number(a.outCount)  || 0) > 0) ||
-        (filter === 'sold'     && (Number(a.soldCount) || 0) > 0);
+        (filter === 'in-stock' && (Number(a.qty_home)  || 0) > 0) ||
+        (filter === 'out'      && (Number(a.qty_out)   || 0) > 0) ||
+        (filter === 'sold'     && (Number(a.qty_sold)  || 0) > 0);
       return matchesQuery && matchesFilter;
     });
   }, [artworks, query, filter]);

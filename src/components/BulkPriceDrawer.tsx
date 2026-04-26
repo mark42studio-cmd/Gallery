@@ -54,7 +54,9 @@ export default function BulkPriceDrawer({ open, onClose, artworks, user, onSucce
 
   async function handleSubmit() {
     if (!artist || !reason.trim()) {
-      setFeedback({ ok: false, msg: '請選擇藝術家並填寫調整原因。' });
+      const msg = '請選擇藝術家並填寫調整原因。';
+      setFeedback({ ok: false, msg });
+      alert(msg);
       return;
     }
     const updates = preview
@@ -62,23 +64,30 @@ export default function BulkPriceDrawer({ open, onClose, artworks, user, onSucce
       .filter(u => u.newPrice > 0 && u.newPrice !== Number(artworks.find(a => a.id === u.id)?.price));
 
     if (updates.length === 0) {
-      setFeedback({ ok: false, msg: '沒有任何定價有變動，請先調整後再提交。' });
+      const msg = '沒有任何定價有變動，請先調整後再提交。';
+      setFeedback({ ok: false, msg });
+      alert(msg);
       return;
     }
 
+    console.log('Submitting pricing updates...', updates);
     setLoading(true);
     setFeedback(null);
     try {
       const res = await api.granularUpdatePrices(updates, reason.trim(), user?.userId ?? '', user?.displayName ?? '');
       if (!res.success) throw new Error(res.error);
-      setFeedback({ ok: true, msg: `已成功更新 ${res.data?.updated ?? updates.length} 件作品的定價。` });
+      const successMsg = `已成功更新 ${res.data?.updated ?? updates.length} 件作品的定價。`;
+      setFeedback({ ok: true, msg: successMsg });
+      alert(successMsg);
       setArtist('');
       setPercentage('');
       setReason('');
       setPrices({});
       onSuccess();
     } catch (err) {
-      setFeedback({ ok: false, msg: err instanceof Error ? err.message : '操作失敗' });
+      const errMsg = err instanceof Error ? err.message : '操作失敗';
+      setFeedback({ ok: false, msg: errMsg });
+      alert(`操作失敗：${errMsg}`);
     } finally {
       setLoading(false);
     }
@@ -89,13 +98,13 @@ export default function BulkPriceDrawer({ open, onClose, artworks, user, onSucce
     onClose();
   }
 
-  const canSubmit = !loading && !!artist && !!reason.trim() && preview.length > 0;
+  const canSubmit = !loading && !!artist && preview.length > 0;
 
   return (
     <Drawer.Root open={open} onOpenChange={(v) => !v && handleClose()} shouldScaleBackground>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-sm" />
-        <Drawer.Content className="fixed bottom-0 inset-x-0 z-50 flex flex-col rounded-t-2xl bg-paper shadow-drawer focus:outline-none max-h-[92vh]">
+        <Drawer.Content aria-describedby={undefined} className="fixed bottom-0 inset-x-0 z-50 flex flex-col rounded-t-2xl bg-paper shadow-drawer focus:outline-none max-h-[92vh]">
 
           {/* Drag handle */}
           <div className="flex justify-center pt-3 pb-1 shrink-0">
