@@ -10,7 +10,10 @@ interface Props {
 }
 
 export default function ArtworkCard({ artwork, onClick, onEditClick, onPriceClick }: Props) {
-  const hasPrice = Number(artwork.price) > 0;
+  const hasPrice   = Number(artwork.price) > 0;
+  const validImage = Boolean(artwork.imageUrl) &&
+    typeof artwork.imageUrl === 'string' &&
+    artwork.imageUrl.startsWith('http');
 
   return (
     <div className="w-full h-full flex flex-col bg-paper border border-smoke rounded-sm shadow-card overflow-hidden hover:-translate-y-1 hover:shadow-md transition-all duration-300">
@@ -21,10 +24,16 @@ export default function ArtworkCard({ artwork, onClick, onEditClick, onPriceClic
         aria-label={`${artwork.title} by ${artwork.artist}`}
       >
         <div className="aspect-square bg-mist relative overflow-hidden">
-          {artwork.imageUrl && typeof artwork.imageUrl === 'string' && artwork.imageUrl.startsWith('http') ? (
-            <img src={artwork.imageUrl} alt={artwork.title}
-              className="w-full h-full object-cover" loading="lazy" />
-          ) : (
+          {validImage ? (
+            <img
+              src={artwork.imageUrl as string}
+              alt={artwork.title}
+              className="w-full h-full object-cover"
+              loading="lazy"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
+          ) : null}
+          {!validImage && (
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="font-display text-4xl text-smoke select-none">
                 {artwork.title.charAt(0)}

@@ -188,7 +188,23 @@ export default function Inventory({ user, isMock }: Props) {
 
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   <StatusBadge status={artwork.status} />
-                  <span className="text-xs tabular-nums font-semibold text-ink">×{artwork.qty}</span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    {(Number(artwork.qty_home) || 0) > 0 && (
+                      <span className={`text-[10px] tabular-nums font-semibold ${filter === 'out' || filter === 'sold' ? 'text-ash' : 'text-ink'}`}>
+                        在庫 {artwork.qty_home}
+                      </span>
+                    )}
+                    {(Number(artwork.qty_out) || 0) > 0 && (
+                      <span className={`text-[10px] tabular-nums font-medium ${filter === 'out' ? 'text-ink' : 'text-charcoal'}`}>
+                        出庫 {artwork.qty_out}
+                      </span>
+                    )}
+                    {(Number(artwork.qty_sold) || 0) > 0 && (
+                      <span className={`text-[10px] tabular-nums ${filter === 'sold' ? 'text-ink font-medium' : 'text-ash'}`}>
+                        售出 {artwork.qty_sold}
+                      </span>
+                    )}
+                  </div>
                   {Number(artwork.price) > 0 && (
                     <span className="text-[10px] text-ash tabular-nums">
                       NT${Number(artwork.price).toLocaleString()}

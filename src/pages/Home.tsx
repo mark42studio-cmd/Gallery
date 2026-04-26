@@ -56,9 +56,9 @@ export default function Home({ user, isMock }: Props) {
     setFormOpen(true);
   }
 
-  const totalIn   = artworks.reduce((acc, a) => acc + (Number(a.qty)       || 0), 0);
-  const totalOut  = artworks.reduce((acc, a) => acc + (Number(a.outCount)  || 0), 0);
-  const totalSold = artworks.reduce((acc, a) => acc + (Number(a.soldCount) || 0), 0);
+  const totalIn   = artworks.reduce((acc, a) => acc + (Number(a.qty_home  ?? a.qty)       || 0), 0);
+  const totalOut  = artworks.reduce((acc, a) => acc + (Number(a.qty_out   ?? a.outCount)  || 0), 0);
+  const totalSold = artworks.reduce((acc, a) => acc + (Number(a.qty_sold  ?? a.soldCount) || 0), 0);
 
   return (
     <div className="flex flex-col min-h-screen bg-paper">

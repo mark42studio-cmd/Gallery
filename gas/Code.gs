@@ -59,6 +59,7 @@ function doPost(e) {
     if (action === 'updateArtwork')                  return jsonResponse(updateArtwork(body));
     if (action === 'updatePrice')                    return jsonResponse(updateArtworkPrice(body));
     if (action === 'bulkUpdatePrices')               return jsonResponse(bulkUpdatePrices(body));
+    if (action === 'granularUpdatePrices')           return jsonResponse(granularUpdatePrices(body));
     if (action === 'aiCommand')                      return jsonResponse(processAiCommand(body));
     if (action === 'executeConfirmedTransaction')    return jsonResponse(executeConfirmedTransaction(body));
     if (action === 'editionTransaction')             return jsonResponse(editionTransaction(body));
@@ -100,7 +101,7 @@ function getArtworks() {
     for (let r = 1; r < edData.length; r++) {
       if (!edData[r][0]) continue;
       const aId = String(edData[r][artIdIdx]).trim();
-      if (!edCounts[aId]) edCounts[aId] = { outCount: 0, soldCount: 0 };
+      if (!edCounts[aId]) edCounts[aId] = { homeCount: 0, outCount: 0, soldCount: 0 };
 
       const rawSold = edData[r][isSoldIdx];
       const isSold  = rawSold === true || String(rawSold).toUpperCase() === 'TRUE';
@@ -108,7 +109,9 @@ function getArtworks() {
         edCounts[aId].soldCount++;
       } else {
         const locCat = String(edData[r][locCatIdx] || '').trim();
-        if (locCat !== '' && locCat !== '家裡' && locCat !== '自家') {
+        if (locCat === '' || locCat === '家裡' || locCat === '自家') {
+          edCounts[aId].homeCount++;
+        } else {
           edCounts[aId].outCount++;
         }
       }
@@ -127,9 +130,19 @@ function getArtworks() {
       obj.price         = Number(obj.price)         || 0;
       obj.edition_total = Number(obj.edition_total) || 0;
       obj.ap_count      = Number(obj.ap_count)      || 0;
-      const counts = edCounts[String(obj.id)] || { outCount: 0, soldCount: 0 };
-      obj.outCount  = Number(counts.outCount)  || 0;
-      obj.soldCount = Number(counts.soldCount) || 0;
+      const counts = edCounts[String(obj.id)] || null;
+      if (counts) {
+        obj.qty_home  = Number(counts.homeCount) || 0;
+        obj.qty_out   = Number(counts.outCount)  || 0;
+        obj.qty_sold  = Number(counts.soldCount) || 0;
+      } else {
+        // non-print artwork: qty already reflects home stock
+        obj.qty_home  = obj.qty;
+        obj.qty_out   = 0;
+        obj.qty_sold  = 0;
+      }
+      obj.outCount  = obj.qty_out;
+      obj.soldCount = obj.qty_sold;
       return obj;
     });
   return { success: true, data: artworks };
@@ -269,6 +282,40 @@ function bulkUpdatePrices(body) {
     data: { updated },
     message: `Updated prices for ${updated} artwork(s) by ${artist}.`,
   };
+}
+
+function granularUpdatePrices(body) {
+  const { updates, reason, userId } = body;
+  if (!updates || !Array.isArray(updates) || updates.length === 0) {
+    throw new Error('updates array is required');
+  }
+  if (!reason) throw new Error('reason is required');
+
+  const artSheet  = getSheet(SHEET_ARTWORKS);
+  const data      = artSheet.getDataRange().getValues();
+  const headers   = data[0];
+  const idIdx     = headers.indexOf('id');
+  const priceIdx  = headers.indexOf('price');
+  const histSheet = getSheet(SHEET_PRICE_HISTORY);
+  const now       = new Date().toISOString();
+  let updated = 0;
+
+  for (const upd of updates) {
+    if (!upd.id || upd.newPrice === undefined) continue;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idIdx]).trim() !== String(upd.id).trim()) continue;
+      const oldPrice = Number(data[i][priceIdx]) || 0;
+      artSheet.getRange(i + 1, priceIdx + 1).setValue(Number(upd.newPrice));
+      histSheet.appendRow([
+        'ph-' + Date.now() + '-' + i,
+        upd.id, oldPrice, Number(upd.newPrice), now, reason, userId || '',
+      ]);
+      updated++;
+      break;
+    }
+  }
+
+  return { success: true, data: { updated } };
 }
 
 // ── Transactions ──────────────────────────────────────────────────────────────
