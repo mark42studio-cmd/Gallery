@@ -27,6 +27,8 @@ export interface Artwork {
   imageUrl?: string;
   location?: string;
   notes?: string;
+  outCount?: number;
+  soldCount?: number;
   // New edition-aware fields
   creation_year?: number;
   paper_size?: string;

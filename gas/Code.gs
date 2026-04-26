@@ -84,11 +84,47 @@ function jsonResponse(data) {
 function getArtworks() {
   const sheet = getSheet(SHEET_ARTWORKS);
   const [headers, ...rows] = sheet.getDataRange().getValues();
+
+  // Build per-artwork edition counts in a single Editions pass.
+  // outCount  = unsold editions NOT at home (at an external gallery)
+  // soldCount = sold editions
+  const edCounts = {};
+  try {
+    const edSheet   = getSheet('Editions');
+    const edData    = edSheet.getDataRange().getValues();
+    const edHeaders = edData[0];
+    const artIdIdx  = edHeaders.indexOf('artworkId');
+    const locCatIdx = edHeaders.indexOf('location_category');
+    const isSoldIdx = edHeaders.indexOf('is_sold');
+
+    for (let r = 1; r < edData.length; r++) {
+      if (!edData[r][0]) continue;
+      const aId = String(edData[r][artIdIdx]).trim();
+      if (!edCounts[aId]) edCounts[aId] = { outCount: 0, soldCount: 0 };
+
+      const rawSold = edData[r][isSoldIdx];
+      const isSold  = rawSold === true || String(rawSold).toUpperCase() === 'TRUE';
+      if (isSold) {
+        edCounts[aId].soldCount++;
+      } else {
+        const locCat = String(edData[r][locCatIdx] || '').trim();
+        if (locCat !== '' && locCat !== '家裡' && locCat !== '自家') {
+          edCounts[aId].outCount++;
+        }
+      }
+    }
+  } catch (_) {
+    // Editions sheet absent — non-print artworks unaffected
+  }
+
   const artworks = rows
     .filter(row => row[0])
     .map(row => {
       const obj = rowToObject(headers, row);
       delete obj.embedding;
+      const counts = edCounts[String(obj.id)] || { outCount: 0, soldCount: 0 };
+      obj.outCount  = counts.outCount;
+      obj.soldCount = counts.soldCount;
       return obj;
     });
   return { success: true, data: artworks };

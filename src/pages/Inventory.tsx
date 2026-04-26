@@ -52,8 +52,8 @@ export default function Inventory({ user, isMock }: Props) {
       const matchesFilter =
         filter === 'all' ||
         (filter === 'in-stock' && a.qty > 0) ||
-        (filter === 'out'      && a.qty === 0 && a.status === 'out') ||
-        (filter === 'sold'     && a.status === 'sold');
+        (filter === 'out'      && (a.outCount  ?? 0) > 0) ||
+        (filter === 'sold'     && (a.soldCount ?? 0) > 0);
       return matchesQuery && matchesFilter;
     });
   }, [artworks, query, filter]);

@@ -169,8 +169,10 @@ export default function TransactionDrawer({
       const cat = String(e.location_category ?? '').trim();
       if (cat === '家裡' || cat === '自家') return false;
       if (sourceLocation) {
+        // Mirror getQuickSourceLocations: key = detail || locCat
         const det = String(e.location_detail ?? '').trim();
-        return cat === sourceLocation.trim() || det === sourceLocation.trim();
+        const editionKey = det || cat;
+        return editionKey === sourceLocation.trim();
       }
       return true;
     }
