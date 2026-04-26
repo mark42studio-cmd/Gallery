@@ -29,7 +29,7 @@ export default function Sidebar() {
             to={to}
             end={to === '/'}
             className={({ isActive }) =>
-              `flex items-center gap-3.5 px-4 py-3 rounded-lg transition-colors duration-150 group ${
+              `flex items-center gap-3.5 px-4 py-3 min-h-[44px] rounded-lg transition-colors duration-150 group ${
                 isActive
                   ? 'bg-ink text-paper'
                   : 'text-ash hover:bg-mist hover:text-ink'
@@ -58,9 +58,12 @@ export default function Sidebar() {
       </nav>
 
       {/* ── Footer ───────────────────────────────────────────────────────── */}
-      <div className="px-7 py-5 shrink-0 border-t border-smoke/60">
-        <p className="text-[9px] text-ash/60 uppercase tracking-[0.18em]">
-          © Gallery System
+      <div className="px-7 py-5 shrink-0 border-t border-smoke/60 space-y-1">
+        <p className="text-[9px] text-ash/60 uppercase tracking-[0.15em] leading-relaxed">
+          Gallery Management System
+        </p>
+        <p className="text-[9px] text-ash/35 leading-relaxed">
+          Designed by 一圈工作室 &middot; v1.0.0
         </p>
       </div>
 

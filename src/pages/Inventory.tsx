@@ -6,7 +6,6 @@ import type { Artwork, LiffUser } from '../types';
 import { getGASUrl } from '../services/api';
 import { useArtworks } from '../hooks/useArtworks';
 import Header from '../components/Header';
-import StatusBadge from '../components/StatusBadge';
 import TransactionDrawer from '../components/TransactionDrawer';
 import ArtworkFormDrawer from '../components/ArtworkFormDrawer';
 import PriceDrawer from '../components/PriceDrawer';
@@ -186,25 +185,32 @@ export default function Inventory({ user, isMock }: Props) {
                   </div>
                 </div>
 
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <StatusBadge status={artwork.status} />
-                  <div className="flex flex-col items-end gap-0.5">
-                    {(Number(artwork.qty_home) || 0) > 0 && (
-                      <span className={`text-[10px] tabular-nums font-semibold ${filter === 'out' || filter === 'sold' ? 'text-ash' : 'text-ink'}`}>
-                        在庫 {artwork.qty_home}
-                      </span>
-                    )}
-                    {(Number(artwork.qty_out) || 0) > 0 && (
-                      <span className={`text-[10px] tabular-nums font-medium ${filter === 'out' ? 'text-ink' : 'text-charcoal'}`}>
-                        出庫 {artwork.qty_out}
-                      </span>
-                    )}
-                    {(Number(artwork.qty_sold) || 0) > 0 && (
-                      <span className={`text-[10px] tabular-nums ${filter === 'sold' ? 'text-ink font-medium' : 'text-ash'}`}>
-                        售出 {artwork.qty_sold}
-                      </span>
-                    )}
-                  </div>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  {filter === 'in-stock' ? (
+                    <span className="inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-sm tabular-nums bg-ink text-paper">
+                      在庫 {Number(artwork.qty_home) || 0}
+                    </span>
+                  ) : filter === 'out' ? (
+                    <span className="inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-sm tabular-nums border-2 border-charcoal text-charcoal">
+                      出庫 {Number(artwork.qty_out) || 0}
+                    </span>
+                  ) : filter === 'sold' ? (
+                    <span className="inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-sm tabular-nums bg-charcoal text-paper/80">
+                      售出 {Number(artwork.qty_sold) || 0}
+                    </span>
+                  ) : (
+                    <div className="flex flex-col items-end gap-0.5">
+                      {(Number(artwork.qty_home) || 0) > 0 && (
+                        <span className="text-[10px] tabular-nums font-semibold text-ink">在庫 {artwork.qty_home}</span>
+                      )}
+                      {(Number(artwork.qty_out) || 0) > 0 && (
+                        <span className="text-[10px] tabular-nums text-charcoal">出庫 {artwork.qty_out}</span>
+                      )}
+                      {(Number(artwork.qty_sold) || 0) > 0 && (
+                        <span className="text-[10px] tabular-nums text-ash">售出 {artwork.qty_sold}</span>
+                      )}
+                    </div>
+                  )}
                   {Number(artwork.price) > 0 && (
                     <span className="text-[10px] text-ash tabular-nums">
                       NT${Number(artwork.price).toLocaleString()}
@@ -213,18 +219,18 @@ export default function Inventory({ user, isMock }: Props) {
                 </div>
               </button>
 
-              {/* Action icon buttons */}
-              <div className="flex flex-col gap-0.5 px-2 shrink-0">
+              {/* Action icon buttons — min 44×44px touch target */}
+              <div className="flex flex-col shrink-0">
                 <button
                   onClick={() => handlePriceClick(artwork)}
-                  className="p-1.5 text-ash hover:text-ink transition-colors rounded-sm hover:bg-smoke"
+                  className="w-11 h-11 flex items-center justify-center text-ash hover:text-ink transition-colors rounded-sm hover:bg-smoke"
                   aria-label="Price management"
                 >
                   <DollarSign size={13} />
                 </button>
                 <button
                   onClick={() => handleEditClick(artwork)}
-                  className="p-1.5 text-ash hover:text-ink transition-colors rounded-sm hover:bg-smoke"
+                  className="w-11 h-11 flex items-center justify-center text-ash hover:text-ink transition-colors rounded-sm hover:bg-smoke"
                   aria-label="Edit artwork"
                 >
                   <PencilLine size={13} />

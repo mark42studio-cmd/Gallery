@@ -1,5 +1,7 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { useLiff } from './hooks/useLiff';
+import { getGASUrl } from './services/api';
+import type { LiffUser } from './types';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
 import Home from './pages/Home';
@@ -23,7 +25,44 @@ const TOUR_STEPS: OnboardingStep[] = [
     title: 'AI 助理',
     content: '用自然語言描述庫存操作，例如「剛售出 2 件草間彌生」，AI 會自動完成記錄。',
   },
+  {
+    targetId: 'tour-stats',
+    title: '版次庫存自動計算',
+    content: '提示：在庫、出庫、售出數量均由「Editions」工作表自動統計，無需手動修改 Artworks 的數量欄位。',
+  },
 ];
+
+interface SharedProps {
+  user: LiffUser | null;
+  isMock: boolean;
+}
+
+// Must live inside <BrowserRouter> to use useLocation.
+function AppRoutes({ user, isMock }: SharedProps) {
+  const location = useLocation();
+  const isMainPage    = location.pathname === '/' || location.pathname === '/inventory';
+  const hasConnection = Boolean(getGASUrl());
+
+  return (
+    <>
+      <div className="md:pl-64 min-h-screen">
+        <div className="max-w-6xl mx-auto">
+          <Routes>
+            <Route path="/"          element={<Home      user={user} isMock={isMock} />} />
+            <Route path="/inventory" element={<Inventory user={user} isMock={isMock} />} />
+            <Route path="/settings"  element={<Settings  user={user} isMock={isMock} />} />
+            <Route path="*"          element={<Home      user={user} isMock={isMock} />} />
+          </Routes>
+        </div>
+      </div>
+
+      <BottomNav />
+
+      {/* Tour: only on main pages and only when GAS is connected */}
+      {isMainPage && hasConnection && <Onboarding steps={TOUR_STEPS} />}
+    </>
+  );
+}
 
 function LoadingScreen() {
   return (
@@ -39,31 +78,10 @@ export default function App() {
 
   if (isLoading) return <LoadingScreen />;
 
-  const sharedProps = { user, isMock };
-
   return (
     <BrowserRouter>
-      {/* Desktop sidebar — fixed, hidden on mobile */}
       <Sidebar />
-
-      {/* Content area — offset right on desktop to clear the sidebar */}
-      <div className="md:pl-64 min-h-screen">
-        <div className="max-w-6xl mx-auto">
-          <Routes>
-            <Route path="/" element={<Home {...sharedProps} />} />
-            <Route path="/inventory" element={<Inventory {...sharedProps} />} />
-            <Route path="/settings" element={<Settings {...sharedProps} />} />
-            {/* Catch-all → home */}
-            <Route path="*" element={<Home {...sharedProps} />} />
-          </Routes>
-        </div>
-      </div>
-
-      {/* Mobile bottom nav — hidden on desktop */}
-      <BottomNav />
-
-      {/* Onboarding tour overlay */}
-      <Onboarding steps={TOUR_STEPS} />
+      <AppRoutes user={user} isMock={isMock} />
     </BrowserRouter>
   );
 }

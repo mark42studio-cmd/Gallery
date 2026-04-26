@@ -2,18 +2,38 @@ import { DollarSign, PencilLine } from 'lucide-react';
 import type { Artwork } from '../types';
 import StatusBadge from './StatusBadge';
 
+type StatFilter = 'all' | 'in-stock' | 'out' | 'sold';
+
 interface Props {
   artwork: Artwork;
   onClick?: (artwork: Artwork) => void;
   onEditClick?: (artwork: Artwork) => void;
   onPriceClick?: (artwork: Artwork) => void;
+  activeFilter?: StatFilter;
 }
 
-export default function ArtworkCard({ artwork, onClick, onEditClick, onPriceClick }: Props) {
+function StatHeroBadge({ label, count, variant }: {
+  label: string;
+  count: number;
+  variant: 'stock' | 'out' | 'sold';
+}) {
+  const base = 'inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-sm tabular-nums';
+  const cls =
+    variant === 'stock' ? 'bg-ink text-paper' :
+    variant === 'out'   ? 'border-2 border-charcoal text-charcoal' :
+                          'bg-charcoal text-paper/80';
+  return <span className={`${base} ${cls}`}>{label} {count}</span>;
+}
+
+export default function ArtworkCard({ artwork, onClick, onEditClick, onPriceClick, activeFilter = 'all' }: Props) {
   const hasPrice   = Number(artwork.price) > 0;
   const validImage = Boolean(artwork.imageUrl) &&
     typeof artwork.imageUrl === 'string' &&
     artwork.imageUrl.startsWith('http');
+
+  const qtyHome = Number(artwork.qty_home ?? artwork.qty)       || 0;
+  const qtyOut  = Number(artwork.qty_out  ?? artwork.outCount)  || 0;
+  const qtySold = Number(artwork.qty_sold ?? artwork.soldCount) || 0;
 
   return (
     <div className="w-full h-full flex flex-col bg-paper border border-smoke rounded-sm shadow-card overflow-hidden hover:-translate-y-1 hover:shadow-md transition-all duration-300">
@@ -55,25 +75,31 @@ export default function ArtworkCard({ artwork, onClick, onEditClick, onPriceClic
             {artwork.title}
           </p>
           <p className="text-xs text-charcoal font-light">{artwork.artist}</p>
-          {/* Multi-state stock breakdown */}
-          <div className="flex items-center gap-2.5 pt-1.5 mt-1.5 border-t border-smoke flex-wrap">
-            {artwork.qty > 0 && (
-              <span className="text-[10px] tabular-nums text-ink font-semibold">
-                在庫 <span className="font-bold">{artwork.qty}</span>
-              </span>
-            )}
-            {(artwork.outCount ?? 0) > 0 && (
-              <span className="text-[10px] tabular-nums text-charcoal">
-                出庫 {artwork.outCount}
-              </span>
-            )}
-            {(artwork.soldCount ?? 0) > 0 && (
-              <span className="text-[10px] tabular-nums text-ash">
-                售出 {artwork.soldCount}
-              </span>
-            )}
-            {artwork.qty === 0 && (artwork.outCount ?? 0) === 0 && (artwork.soldCount ?? 0) === 0 && (
-              <span className="text-[10px] text-ash">—</span>
+          {/* Context-aware stat badge */}
+          <div className="pt-1.5 mt-1.5 border-t border-smoke">
+            {activeFilter === 'in-stock' ? (
+              <StatHeroBadge label="在庫" count={qtyHome} variant="stock" />
+            ) : activeFilter === 'out' ? (
+              <StatHeroBadge label="出庫" count={qtyOut} variant="out" />
+            ) : activeFilter === 'sold' ? (
+              <StatHeroBadge label="售出" count={qtySold} variant="sold" />
+            ) : (
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {qtyHome > 0 && (
+                  <span className="text-[10px] tabular-nums text-ink font-semibold">
+                    在庫 <span className="font-bold">{qtyHome}</span>
+                  </span>
+                )}
+                {qtyOut > 0 && (
+                  <span className="text-[10px] tabular-nums text-charcoal">出庫 {qtyOut}</span>
+                )}
+                {qtySold > 0 && (
+                  <span className="text-[10px] tabular-nums text-ash">售出 {qtySold}</span>
+                )}
+                {qtyHome === 0 && qtyOut === 0 && qtySold === 0 && (
+                  <span className="text-[10px] text-ash">—</span>
+                )}
+              </div>
             )}
           </div>
           {hasPrice && (

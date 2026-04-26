@@ -18,15 +18,21 @@ interface ChatMessage {
 }
 
 export default function AiCommandFab({ user, onSuccess }: Props) {
-  const [open, setOpen]         = useState(false);
-  const [command, setCommand]   = useState('');
+  const [open, setOpen]           = useState(false);
+  const [command, setCommand]     = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const textareaRef   = useRef<HTMLTextAreaElement>(null);
+  const [messages, setMessages]   = useState<ChatMessage[]>([]);
+  const textareaRef    = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Lock body scroll while panel is open
   useEffect(() => {
-    if (open) setTimeout(() => textareaRef.current?.focus(), 100);
+    document.body.style.overflow = open ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
+
+  useEffect(() => {
+    if (open) setTimeout(() => textareaRef.current?.focus(), 120);
     else { setCommand(''); setMessages([]); }
   }, [open]);
 
@@ -77,7 +83,7 @@ export default function AiCommandFab({ user, onSuccess }: Props) {
     try {
       const res = await api.executeConfirmedTransaction({
         artworkId,
-        txAction: action,
+        txAction:    action,
         qty,
         outSubtype:  outSubtype  ?? undefined,
         destination: extra.destination || undefined,
@@ -108,7 +114,7 @@ export default function AiCommandFab({ user, onSuccess }: Props) {
 
   return (
     <>
-      {/* Overlay */}
+      {/* Backdrop */}
       {open && (
         <div
           className="fixed inset-0 z-40 bg-ink/30 backdrop-blur-sm animate-fade-in"
@@ -116,17 +122,36 @@ export default function AiCommandFab({ user, onSuccess }: Props) {
         />
       )}
 
-      {/* Panel */}
+      {/* ── Panel ──
+          Mobile  : full-width bottom drawer, h-[85dvh], slide up from bottom
+          Desktop : floating panel, bottom-right, max-h-[70vh]
+      */}
       {open && (
-        <div className="fixed bottom-20 inset-x-4 z-50 bg-paper rounded-xl shadow-lifted border border-smoke animate-slide-up flex flex-col max-h-[70vh]">
+        <div
+          className={[
+            'fixed z-50 bg-paper border border-smoke flex flex-col shadow-lifted animate-slide-up',
+            // mobile
+            'bottom-0 inset-x-0 rounded-t-2xl h-[85dvh]',
+            // desktop override
+            'md:bottom-20 md:right-4 md:left-auto md:w-96 md:h-auto md:max-h-[70vh] md:rounded-xl',
+          ].join(' ')}
+        >
+          {/* Drag handle — mobile only */}
+          <div className="flex justify-center pt-3 pb-1 shrink-0 md:hidden">
+            <div className="w-10 h-1 rounded-full bg-smoke" />
+          </div>
 
           {/* Header */}
-          <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
+          <div className="flex items-center justify-between px-4 pt-2 pb-2 shrink-0 md:pt-4">
             <div className="flex items-center gap-2">
               <Sparkles size={15} className="text-ink" />
               <span className="font-display text-base font-semibold">AI 助理</span>
             </div>
-            <button onClick={() => setOpen(false)} className="p-1 text-ash hover:text-ink">
+            <button
+              onClick={() => setOpen(false)}
+              className="w-9 h-9 flex items-center justify-center text-ash hover:text-ink rounded-sm hover:bg-mist transition-colors"
+              aria-label="關閉"
+            >
               <X size={16} />
             </button>
           </div>
@@ -148,7 +173,6 @@ export default function AiCommandFab({ user, onSuccess }: Props) {
                   </div>
                 )}
 
-                {/* ── Pending confirmation card ── */}
                 {msg.role === 'ai' && msg.pending && !msg.done && !msg.cancelled ? (
                   <ConfirmCard
                     pending={msg.pending}
@@ -175,7 +199,6 @@ export default function AiCommandFab({ user, onSuccess }: Props) {
               </div>
             ))}
 
-            {/* Typing indicator */}
             {isLoading && (
               <div className="flex items-end gap-1.5 justify-start">
                 <div className="w-5 h-5 rounded-full bg-ink flex items-center justify-center shrink-0 mb-0.5">
@@ -204,8 +227,11 @@ export default function AiCommandFab({ user, onSuccess }: Props) {
             </div>
           )}
 
-          {/* Input row */}
-          <div className="px-4 pb-4 pt-2 shrink-0 border-t border-smoke">
+          {/* Input row — fontSize 16px prevents iOS auto-zoom; pb respects home-bar inset */}
+          <div
+            className="px-4 pt-2 shrink-0 border-t border-smoke"
+            style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
+          >
             <div className="flex gap-2">
               <textarea
                 ref={textareaRef}
@@ -214,31 +240,39 @@ export default function AiCommandFab({ user, onSuccess }: Props) {
                 onKeyDown={handleKeyDown}
                 rows={2}
                 placeholder="輸入指令或問題…"
-                className="flex-1 border border-smoke rounded-sm bg-mist px-3 py-2 text-sm text-ink placeholder-ash resize-none focus:outline-none focus:ring-1 focus:ring-ink"
+                style={{ fontSize: '16px' }}
+                className="flex-1 border border-smoke rounded-sm bg-mist px-3 py-2 text-ink placeholder-ash resize-none focus:outline-none focus:ring-1 focus:ring-ink"
               />
               <button
                 onClick={handleSend}
                 disabled={!command.trim() || isLoading}
-                className="px-3 bg-ink text-paper rounded-sm flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-charcoal transition-colors"
+                className="w-11 min-h-[44px] bg-ink text-paper rounded-sm flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-charcoal transition-colors"
               >
                 <Send size={14} />
               </button>
             </div>
-            <p className="text-center text-[10px] text-ash mt-1">⌘↵ 發送</p>
+            <p className="text-center text-[10px] text-ash mt-1.5 hidden md:block">⌘↵ 發送</p>
           </div>
         </div>
       )}
 
-      {/* FAB */}
+      {/* FAB — on mobile, hidden when panel is open (panel has its own close btn) */}
       <button
         id="tour-ai-fab"
         onClick={() => setOpen((v) => !v)}
-        className={`fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full shadow-lifted flex items-center justify-center transition-all duration-200 ${
-          open ? 'bg-charcoal rotate-45' : 'bg-ink hover:bg-charcoal active:scale-95'
-        }`}
+        className={[
+          'fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full shadow-lifted',
+          'flex items-center justify-center transition-all duration-200',
+          open
+            ? 'opacity-0 pointer-events-none md:opacity-100 md:pointer-events-auto bg-charcoal rotate-45'
+            : 'bg-ink hover:bg-charcoal active:scale-95',
+        ].join(' ')}
         aria-label="AI 助理"
       >
-        {open ? <X size={18} className="text-paper" /> : <Sparkles size={18} className="text-paper" />}
+        {open
+          ? <X size={18} className="text-paper" />
+          : <Sparkles size={18} className="text-paper" />
+        }
       </button>
     </>
   );
@@ -253,9 +287,9 @@ interface ConfirmCardProps {
 }
 
 function ConfirmCard({ pending, onConfirm, onCancel }: ConfirmCardProps) {
-  const [buyerName, setBuyerName]   = useState('');
-  const [soldPrice, setSoldPrice]   = useState('');
-  const [destination, setDestination] = useState('');
+  const [buyerName, setBuyerName]       = useState('');
+  const [soldPrice, setSoldPrice]       = useState('');
+  const [destination, setDestination]   = useState('');
   const [isConfirming, setIsConfirming] = useState(false);
 
   const isCheckIn  = pending.action === 'check-in';
@@ -282,8 +316,6 @@ function ConfirmCard({ pending, onConfirm, onCancel }: ConfirmCardProps) {
 
   return (
     <div className="w-full max-w-[88%] rounded-xl border border-smoke bg-paper rounded-bl-sm overflow-hidden shadow-sm">
-
-      {/* Artwork info header */}
       <div className="px-3 pt-2.5 pb-2 bg-mist/50 border-b border-smoke/70">
         <div className="flex items-center gap-1.5 mb-1">
           <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${accentCls}`}>
@@ -304,7 +336,6 @@ function ConfirmCard({ pending, onConfirm, onCancel }: ConfirmCardProps) {
         )}
       </div>
 
-      {/* Detail input fields */}
       <div className="px-3 py-2.5 space-y-2">
         {isCheckIn && (
           <p className="text-xs text-charcoal">確認將 {pending.qty} 件作品入庫？</p>
@@ -316,6 +347,7 @@ function ConfirmCard({ pending, onConfirm, onCancel }: ConfirmCardProps) {
               onChange={(e) => setBuyerName(e.target.value)}
               placeholder="買家姓名 *"
               autoFocus
+              style={{ fontSize: '16px' }}
               className={miniInp}
             />
             <input
@@ -324,6 +356,7 @@ function ConfirmCard({ pending, onConfirm, onCancel }: ConfirmCardProps) {
               value={soldPrice}
               onChange={(e) => setSoldPrice(e.target.value)}
               placeholder="成交價格 NT$（選填）"
+              style={{ fontSize: '16px' }}
               className={miniInp}
             />
           </>
@@ -334,24 +367,24 @@ function ConfirmCard({ pending, onConfirm, onCancel }: ConfirmCardProps) {
             onChange={(e) => setDestination(e.target.value)}
             placeholder="移轉目的地 *"
             autoFocus
+            style={{ fontSize: '16px' }}
             className={miniInp}
           />
         )}
       </div>
 
-      {/* Confirm / Cancel */}
       <div className="flex border-t border-smoke/70 divide-x divide-smoke/70">
         <button
           onClick={onCancel}
           disabled={isConfirming}
-          className="flex-1 py-2.5 text-xs text-ash hover:text-ink hover:bg-mist/60 transition-colors disabled:opacity-40"
+          className="flex-1 py-3 text-xs text-ash hover:text-ink hover:bg-mist/60 transition-colors disabled:opacity-40"
         >
           取消
         </button>
         <button
           onClick={submit}
           disabled={!canConfirm}
-          className="flex-1 py-2.5 text-xs font-semibold text-ink hover:bg-ink hover:text-paper transition-colors disabled:opacity-30"
+          className="flex-1 py-3 text-xs font-semibold text-ink hover:bg-ink hover:text-paper transition-colors disabled:opacity-30"
         >
           {isConfirming ? '執行中…' : '確認執行'}
         </button>
