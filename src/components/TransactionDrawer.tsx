@@ -34,6 +34,7 @@ export default function TransactionDrawer({
   const [editions, setEditions]               = useState<Edition[]>([]);
   const [editionsLoading, setEditionsLoading] = useState(false);
   const [selectedNums, setSelectedNums]       = useState<(number | string)[]>([]);
+  const [editionRefreshKey, setEditionRefreshKey] = useState(0);
 
   // Check-in source
   const [sourceLocation, setSourceLocation] = useState('');
@@ -121,7 +122,7 @@ export default function TransactionDrawer({
       .catch(() => {})
       .finally(() => { if (!cancelled) setEditionsLoading(false); });
     return () => { cancelled = true; };
-  }, [artworkId, isPrintmaking]);
+  }, [artworkId, isPrintmaking, editionRefreshKey]);
 
   // ── Fetch smart source pool on check-in ─────────────────────
   useEffect(() => {
@@ -248,7 +249,8 @@ export default function TransactionDrawer({
       if (res.success) {
         setFeedback({ ok: true, msg: res.message ?? '交易已記錄。' });
         onSuccess();
-        setTimeout(onClose, 1200);
+        setSelectedNums([]);
+        setEditionRefreshKey((k) => k + 1);
       } else {
         setFeedback({ ok: false, msg: res.error ?? '交易失敗。' });
       }
