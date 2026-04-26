@@ -56,8 +56,9 @@ export default function Home({ user, isMock }: Props) {
     setFormOpen(true);
   }
 
-  const inStock  = artworks.filter((a) => a.status === 'in-stock').length;
-  const outCount = artworks.filter((a) => a.status === 'out').length;
+  const totalIn   = artworks.filter((a) => a.qty > 0).length;
+  const totalOut  = artworks.filter((a) => (a.outCount  ?? 0) > 0).length;
+  const totalSold = artworks.filter((a) => (a.soldCount ?? 0) > 0).length;
 
   return (
     <div className="flex flex-col min-h-screen bg-paper">
@@ -65,11 +66,12 @@ export default function Home({ user, isMock }: Props) {
 
       <main className="flex-1 px-4 py-5 pb-24 md:pb-8 scroll-smooth-ios">
         {/* Summary stats */}
-        <div id="tour-stats" className="grid grid-cols-3 gap-3 mb-6">
+        <div id="tour-stats" className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
             { label: '總計',   value: artworks.length },
-            { label: '在庫',   value: inStock },
-            { label: '已出庫', value: outCount },
+            { label: '在庫',   value: totalIn },
+            { label: '已出庫', value: totalOut },
+            { label: '已售出', value: totalSold },
           ].map(({ label, value }) => (
             <div key={label} className="border border-smoke rounded-sm p-3 text-center">
               <p className="text-xl font-semibold tabular-nums text-ink">{value}</p>

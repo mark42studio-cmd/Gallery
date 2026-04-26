@@ -21,7 +21,7 @@ export default function ArtworkCard({ artwork, onClick, onEditClick, onPriceClic
         aria-label={`${artwork.title} by ${artwork.artist}`}
       >
         <div className="aspect-square bg-mist relative overflow-hidden">
-          {artwork.imageUrl ? (
+          {artwork.imageUrl && artwork.imageUrl.startsWith('http') ? (
             <img src={artwork.imageUrl} alt={artwork.title}
               className="w-full h-full object-cover" loading="lazy" />
           ) : (
@@ -46,9 +46,26 @@ export default function ArtworkCard({ artwork, onClick, onEditClick, onPriceClic
             {artwork.title}
           </p>
           <p className="text-xs text-charcoal font-light">{artwork.artist}</p>
-          <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-smoke">
-            <span className="text-[10px] text-ash uppercase tracking-widest font-medium">Qty</span>
-            <span className="text-sm font-semibold tabular-nums text-ink">{artwork.qty}</span>
+          {/* Multi-state stock breakdown */}
+          <div className="flex items-center gap-2.5 pt-1.5 mt-1.5 border-t border-smoke flex-wrap">
+            {artwork.qty > 0 && (
+              <span className="text-[10px] tabular-nums text-ink font-semibold">
+                在庫 <span className="font-bold">{artwork.qty}</span>
+              </span>
+            )}
+            {(artwork.outCount ?? 0) > 0 && (
+              <span className="text-[10px] tabular-nums text-charcoal">
+                出庫 {artwork.outCount}
+              </span>
+            )}
+            {(artwork.soldCount ?? 0) > 0 && (
+              <span className="text-[10px] tabular-nums text-ash">
+                售出 {artwork.soldCount}
+              </span>
+            )}
+            {artwork.qty === 0 && (artwork.outCount ?? 0) === 0 && (artwork.soldCount ?? 0) === 0 && (
+              <span className="text-[10px] text-ash">—</span>
+            )}
           </div>
           {hasPrice && (
             <p className="text-[10px] text-charcoal font-medium tabular-nums">

@@ -279,7 +279,7 @@ export default function TransactionDrawer({
     <Drawer.Root open={open} onOpenChange={(v) => !v && onClose()} shouldScaleBackground>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-sm" />
-        <Drawer.Content className="fixed bottom-0 inset-x-0 z-50 flex flex-col rounded-t-2xl bg-paper shadow-drawer focus:outline-none max-h-[92vh]">
+        <Drawer.Content aria-describedby={undefined} className="fixed bottom-0 inset-x-0 z-50 flex flex-col rounded-t-2xl bg-paper shadow-drawer focus:outline-none max-h-[92vh]">
 
           {/* Drag handle */}
           <div className="flex justify-center pt-3 pb-1 shrink-0">
